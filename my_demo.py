@@ -90,7 +90,8 @@ def infer_fast(net, img, net_input_height_size, stride, upsample_ratio, cpu,
 
     tensor_img = torch.from_numpy(padded_img).permute(2, 0, 1).unsqueeze(0).float()
     if not cpu:
-        tensor_img = tensor_img.cuda()
+        if torch.cuda.is_available():
+            tensor_img = tensor_img.cuda()
 
     stages_output = net(tensor_img)
 
@@ -110,8 +111,9 @@ def run_demo(net, img_file, height_size, cpu, track, smooth):
     use_cuda=torch.cuda.is_available()
     print("cuda:",use_cuda)
     if not cpu:
-        print("cpu:",cpu)
-        net = net.cuda()
+        if torch.cuda.is_available():
+            print("cpu:",cpu)
+            net = net.cuda()
 
     stride = 8
     upsample_ratio = 4
@@ -121,7 +123,7 @@ def run_demo(net, img_file, height_size, cpu, track, smooth):
     imgs=os.listdir(img_file)
     
     time1=time.time()
-    for i in range(11):
+    for i in range(1):
         print("epoch:",i)
         for i,img in enumerate(imgs):
             img = cv2.imread(os.path.join(img_file,img), cv2.IMREAD_COLOR)
