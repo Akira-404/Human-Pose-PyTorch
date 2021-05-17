@@ -3,11 +3,6 @@ import os
 import cv2
 import math
 import time
-import torch.backends.cudnn as cudnn
-import numpy as np
-import torch
-
-import base64_func
 from base64_func import *
 from models.with_mobilenet import PoseEstimationWithMobileNet
 from modules.keypoints import extract_keypoints, group_keypoints
@@ -16,10 +11,11 @@ from modules.pose import Pose, track_poses
 
 
 class Person_Body(object):
-    def __init__(self, index, head_point: list, body_box: list):
+    def __init__(self, index, head_point: list, body_box: list, body_point: list):
         self.__index = index
         self.__head_point = head_point
         self.__body_box = body_box
+        self.__body_point = body_point
         self.__flag = False
 
     def get_person_index(self) -> int:
@@ -27,6 +23,9 @@ class Person_Body(object):
 
     def get_head_point(self) -> list:
         return self.__head_point
+
+    def get_body_point(self) -> list:
+        return self.__body_point
 
     def get_body_box(self) -> list:
         return self.__body_box
@@ -160,7 +159,7 @@ def run_demo(net, img_file, height_size, cpu, track, smooth):
     print("time:", time2 - time1)
 
 
-#点对点欧拉距离
+# 点对点欧拉距离
 def p2p_euclidean(point1: list, point2: list) -> int:
     """
     :param point1:[x1,y1]
@@ -175,7 +174,6 @@ def p2p_euclidean(point1: list, point2: list) -> int:
 # 头部和安全帽的最小距离
 def get_distance(head_points: list, hat_point: list) -> int:
     """
-
     :param point1: head point :[[x1,y1],[x2,y2],[y3,y3],...]
     :param points: hat points:[x1,y1]
     :return: min distance
@@ -183,19 +181,40 @@ def get_distance(head_points: list, hat_point: list) -> int:
     min_dis = 99999
     for head in head_points:
         ret = p2p_euclidean(head, hat_point)
+        print("ret:", ret)
         if ret < min_dis:
             min_dis = ret
-    print("min dis:",min_dis)
+    print("min dis:", min_dis)
     return min_dis
 
 
 # 判断在阈值范围内，是否有匹配的安全帽
-def is_hat(head_point: list, hats_point: list, t: int) -> bool:
+def is_hat(person: Person_Body, hats_point: list, t: int) -> bool:
+    # 头部平均高度
+    Y = int(np.average(np.array(person.get_head_point()), 0)[1])
+    print("头部平均高度", Y)
+
     for hat in hats_point:
-        ret = get_distance(head_point, hat)
-        if ret < t:
-            print("True")
-            return True
+        # 安全帽在人体范围内
+        if hat[1] > Y:
+            print(hat[1])
+            print("安全帽低于头部")
+            continue
+        ret = get_distance(person.get_head_point(), hat)
+
+        body_point = person.get_body_point()
+        if body_point[1][0] != -1 or body_point[8][0] != -1:
+            body_2_5 = p2p_euclidean(body_point[2], body_point[5])
+            print("body_2_5:",body_2_5)
+            proportion = ret / body_2_5
+            print("proportion:", proportion)
+            ret*=proportion
+            print("ret*proportion:", ret)
+            if proportion < t and ret<t*10:
+                return True
+        else:
+            return False
+    print("安全帽离开头部")
     return False
 
 
@@ -225,22 +244,24 @@ upsample_ratio = 4
 num_keypoints = Pose.num_kpts
 delay = 1
 
-
 app = Flask(__name__)
 
-#颜色表
-RED=(0,0,255)
-BULD=(255,0,0)
-GREED=(0,255,0)
-YELLOW=(255,255,0)
-WHITE=(255,255,255)
-PURPLE=(160,32 ,240)
-BLACK=(0,0,0)
+# 颜色表
+RED = (0, 0, 255)
+BULD = (255, 0, 0)
+GREED = (0, 255, 0)
+YELLOW = (255, 255, 0)
+WHITE = (255, 255, 255)
+PURPLE = (160, 32, 240)
+BLACK = (0, 0, 0)
+
 
 @app.route('/', methods=['POST'])
 def human_pose():
-    head_point = []
-    body_list = []
+
+    is_drwa=True
+
+    output = []
     person_list = []
     params = request.json if request.method == "POST" else request.args
     img = base64_decode2cv2(params["img"])
@@ -248,12 +269,14 @@ def human_pose():
 
     hat_location = params["hat_location"]
     t = params["t"]
-    #获取安全帽中心点
+    # 获取安全帽中心点
     hat_centre_points = get_centre_point(hat_location)
-    print("安全帽个数:",len(hat_centre_points))
-    #绘制安全帽中心点
-    for i,p in enumerate(hat_centre_points):
-        cv2.circle(img, tuple(p), 6, WHITE, -1)
+    print("安全帽个数:", len(hat_centre_points))
+
+    if is_drwa:
+        # 绘制安全帽中心点
+        for i, p in enumerate(hat_centre_points):
+            cv2.circle(img, tuple(p), 6, WHITE, -1)
 
     heatmaps, pafs, scale, pad = infer_fast(net, img, height_size, stride, upsample_ratio, cpu)
 
@@ -262,15 +285,13 @@ def human_pose():
     for kpt_idx in range(num_keypoints):  # 19th for bg
         total_keypoints_num += extract_keypoints(heatmaps[:, :, kpt_idx], all_keypoints_by_type,
                                                  total_keypoints_num)
-    # print("total_keypoints_num:", total_keypoints_num)
 
     pose_entries, all_keypoints = group_keypoints(all_keypoints_by_type, pafs)
-    # print("pose_entries num:{}, all_keypoints num:{}".format(len(pose_entries), len(all_keypoints)))
     for kpt_id in range(all_keypoints.shape[0]):
         all_keypoints[kpt_id, 0] = (all_keypoints[kpt_id, 0] * stride / upsample_ratio - pad[1]) / scale
         all_keypoints[kpt_id, 1] = (all_keypoints[kpt_id, 1] * stride / upsample_ratio - pad[0]) / scale
 
-    print("人体个数：",len(pose_entries))
+    print("人体个数：", len(pose_entries))
     for n in range(len(pose_entries)):
         head_point = []
         if len(pose_entries[n]) == 0:
@@ -283,7 +304,7 @@ def human_pose():
 
         pose = Pose(pose_keypoints, pose_entries[n][18])
 
-        #耳朵关键点
+        # 耳朵关键点
         ears = [16, 17]
         ears_flag = True
         for ear in ears:
@@ -292,7 +313,7 @@ def human_pose():
                 continue
             head_point.append(tuple(pose_keypoints[ear]))
 
-        #当耳朵关键点完整时推断中心点
+        # 当耳朵关键点完整时推断中心点
         if ears_flag:
             offset = abs(pose_keypoints[17][0] - pose_keypoints[16][0])
             x = min(pose_keypoints[17][0], pose_keypoints[16][0])
@@ -306,61 +327,62 @@ def human_pose():
             if pose_keypoints[16][1] == pose_keypoints[17][1]:
                 new_point = (x, pose_keypoints[17][1])
             head_point.append(new_point)
-            # cv2.circle(img, new_point, 2, (0, 0, 255), -1)
 
         face = [0, 14, 15]
         for f in face:
             if pose_keypoints[f][0] != -1 and pose_keypoints[f][1] != -1:
                 head_point.append(tuple(pose_keypoints[f]))
-                # cv2.circle(img, tuple(pose_keypoints[f]), 2, (255, 0, 0), -1)
+        if is_drwa:
+            # 绘制人体骨骼
+            pose.draw(img)
+            # 绘制头部关键点
+            for p in head_point:
+                cv2.circle(img, tuple(p), 3, BULD, -1)
 
-        #绘制人体骨骼
-        pose.draw(img)
-
-        #绘制头部关键点
-        for p in head_point:
-            cv2.circle(img, tuple(p), 3, BULD, -1)
-
-        #人体边框坐标列表
-        body_list=[]
-        expand_rate = 0.3 #边界扩展因子
+        # 人体边框坐标列表
+        body_list = []
+        expand_rate = 0.3  # 边界扩展因子
         x1, y1 = (pose.bbox[0], int(pose.bbox[1] - pose.bbox[2] * expand_rate))
         x2, y2 = (pose.bbox[0] + pose.bbox[2], pose.bbox[1] + pose.bbox[3] + int(pose.bbox[2] * expand_rate))
         body_list.append(x1)
         body_list.append(y1)
         body_list.append(x2)
         body_list.append(y2)
-        #绘制人体边框
-        # cv2.rectangle(img, (x1, y1), (x2, y2), PURPLE,4)
-        person_body = Person_Body(n, head_point, body_list)
+        person_body = Person_Body(n, head_point, body_list, pose_keypoints)
         person_list.append(person_body)
 
-    #遍历匹配人体和安全帽
+    # 遍历匹配人体和安全帽
     for person in person_list:
-        print("当前人体:",person.get_person_index())
-        ret = is_hat(person.get_head_point(), hat_centre_points, t)
+        print("\n当前第{}个人".format(person.get_person_index()), )
+        ret = is_hat(person, hat_centre_points, t)
+        print("是否戴安全帽：",ret)
         person.set_flag(ret)
 
     for person in person_list:
-        # print(person.get_person_index())
-        # print(person.get_body_box())
-        # print(person.get_head_point())
-        # print(person.get_flag())
+
+        temp_dic = {}
         box = person.get_body_box()
         x1, y1 = (box[0], box[1])
         x2, y2 = (box[2], box[3])
-        if person.get_flag():
-            print("person:{},status:{}".format(person.get_person_index(),person.get_flag()),)
-            cv2.rectangle(img, (x1, y1), (x2, y2), GREED,1)
-            # cv2.putText(img,"Ture",(x1+10, y1+30),cv2.FONT_HERSHEY_TRIPLEX,1,GREED)
-        else:
-            print("person:{},status:{}".format(person.get_person_index(),person.get_flag()),)
-            # cv2.putText(img,"False",(x1+10, y1+30),cv2.FONT_HERSHEY_TRIPLEX,1,RED)
-            cv2.rectangle(img, (x1, y1), (x2, y2), RED,1)
 
-    cv2.imwrite("./ret_imgs/ret_{}.jpg".format("test"), img)
+        temp_dic["x1"] = x1
+        temp_dic["y1"] = y1
+        temp_dic["x2"] = x2
+        temp_dic["y2"] = y2
+        temp_dic["flag"] = person.get_flag()
 
-    return "ok"
+        if is_drwa:
+            if person.get_flag():
+                cv2.rectangle(img, (x1, y1), (x2, y2), GREED, 1)
+            else:
+                cv2.rectangle(img, (x1, y1), (x2, y2), RED, 1)
+        output.append(temp_dic)
+
+    print("output:", output)
+    if is_drwa:
+        cv2.imwrite("./ret_imgs/ret_{}.jpg".format("test"), img)
+
+    return get_result("200", "Success", output)
 
 
 def get_centre_point(location: list) -> list:
@@ -369,7 +391,6 @@ def get_centre_point(location: list) -> list:
     :return: [[x,y],[x,y]]
     """
     point = []
-    part_point = []
     print(location)
     for part in location:
         part_point = []
@@ -383,11 +404,10 @@ def get_centre_point(location: list) -> list:
 
 
 # 构建接口返回结果
-def get_result(code, message, score, data):
+def get_result(code, message, data):
     result = {
         "code": code,
         "message": message,
-        "score": score,
         "data": data
     }
     print("Response data:", result)
