@@ -1,5 +1,4 @@
-from flask import Flask, jsonify, request, redirect
-import os
+from flask import Flask, jsonify, request
 import cv2
 import math
 import time
@@ -171,13 +170,14 @@ def p2p_euclidean(point1: list, point2: list) -> int:
     return int(math.sqrt(offset_x ** 2 + offset_y ** 2))
 
 
-# 头部和安全帽的最小距离
+#求头部与所有安全帽的最小距离
 def get_distance(head_points: list, hat_point: list) -> int:
     """
     :param point1: head point :[[x1,y1],[x2,y2],[y3,y3],...]
     :param points: hat points:[x1,y1]
     :return: min distance
     """
+
     min_dis = 99999
     for head in head_points:
         ret = p2p_euclidean(head, hat_point)
@@ -205,12 +205,14 @@ def is_hat(person: Person_Body, hats_point: list, t: int) -> bool:
         body_point = person.get_body_point()
         if body_point[1][0] != -1 or body_point[8][0] != -1:
             body_2_5 = p2p_euclidean(body_point[2], body_point[5])
-            print("body_2_5:",body_2_5)
+            print("body_2_5:", body_2_5)
+            #头帽距离和肩膀比值
             proportion = ret / body_2_5
             print("proportion:", proportion)
-            ret*=proportion
+            #对头帽距离进行比例计算
+            ret *= proportion
             print("ret*proportion:", ret)
-            if proportion < t and ret<t*10:
+            if proportion < t and ret < t * 10:
                 return True
         else:
             return False
@@ -258,8 +260,7 @@ BLACK = (0, 0, 0)
 
 @app.route('/', methods=['POST'])
 def human_pose():
-
-    is_drwa=True
+    is_drwa = True
 
     output = []
     person_list = []
@@ -355,11 +356,10 @@ def human_pose():
     for person in person_list:
         print("\n当前第{}个人".format(person.get_person_index()), )
         ret = is_hat(person, hat_centre_points, t)
-        print("是否戴安全帽：",ret)
+        print("是否戴安全帽：", ret)
         person.set_flag(ret)
 
     for person in person_list:
-
         temp_dic = {}
         box = person.get_body_box()
         x1, y1 = (box[0], box[1])
