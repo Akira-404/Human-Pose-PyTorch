@@ -1,4 +1,5 @@
 from flask import Flask, jsonify, request
+import numpy as np
 import cv2
 import math
 import time
@@ -7,6 +8,7 @@ from models.with_mobilenet import PoseEstimationWithMobileNet
 from modules.keypoints import extract_keypoints, group_keypoints
 from modules.load_state import load_state
 from modules.pose import Pose, track_poses
+from scipy.spatial.distance import pdist, squareform
 
 
 class Person_Body(object):
@@ -16,6 +18,11 @@ class Person_Body(object):
         self.__body_box = body_box
         self.__body_point = body_point
         self.__flag = False
+
+    def get_body_area(self) -> int:
+        w = self.__body_box[2] - self.__body_box[0]
+        h = self.__body_box[3] - self.__body_box[1]
+        return w * h
 
     def get_person_index(self) -> int:
         return self.__index
@@ -85,79 +92,6 @@ def infer_fast(net, img, net_input_height_size, stride, upsample_ratio, cpu,
     return heatmaps, pafs, scale, pad
 
 
-def run_demo(net, img_file, height_size, cpu, track, smooth):
-    net = net.eval()
-    use_cuda = torch.cuda.is_available()
-    print("cuda:", use_cuda)
-    if not cpu:
-        print("cpu:", cpu)
-        net = net.cuda()
-
-    stride = 8
-    upsample_ratio = 4
-    num_keypoints = Pose.num_kpts
-    previous_poses = []
-    delay = 1
-    imgs = os.listdir(img_file)
-
-    time1 = time.time()
-    for i in range(11):
-        print("epoch:", i)
-        for i, img in enumerate(imgs):
-            img = cv2.imread(os.path.join(img_file, img), cv2.IMREAD_COLOR)
-            orig_img = img.copy()
-            heatmaps, pafs, scale, pad = infer_fast(net, img, height_size, stride, upsample_ratio, cpu)
-
-            total_keypoints_num = 0
-            all_keypoints_by_type = []
-            for kpt_idx in range(num_keypoints):  # 19th for bg
-                total_keypoints_num += extract_keypoints(heatmaps[:, :, kpt_idx], all_keypoints_by_type,
-                                                         total_keypoints_num)
-
-            pose_entries, all_keypoints = group_keypoints(all_keypoints_by_type, pafs)
-            for kpt_id in range(all_keypoints.shape[0]):
-                all_keypoints[kpt_id, 0] = (all_keypoints[kpt_id, 0] * stride / upsample_ratio - pad[1]) / scale
-                all_keypoints[kpt_id, 1] = (all_keypoints[kpt_id, 1] * stride / upsample_ratio - pad[0]) / scale
-            current_poses = []
-            for n in range(len(pose_entries)):
-                if len(pose_entries[n]) == 0:
-                    continue
-                pose_keypoints = np.ones((num_keypoints, 2), dtype=np.int32) * -1
-                for kpt_id in range(num_keypoints):
-                    if pose_entries[n][kpt_id] != -1.0:  # keypoint was found
-                        pose_keypoints[kpt_id, 0] = int(all_keypoints[int(pose_entries[n][kpt_id]), 0])
-                        pose_keypoints[kpt_id, 1] = int(all_keypoints[int(pose_entries[n][kpt_id]), 1])
-                pose = Pose(pose_keypoints, pose_entries[n][18])
-                current_poses.append(pose)
-
-            if track:
-                track_poses(previous_poses, current_poses, smooth=smooth)
-                previous_poses = current_poses
-            for pose in current_poses:
-                pose.draw(img)
-            img = cv2.addWeighted(orig_img, 0.6, img, 0.4, 0)
-            for pose in current_poses:
-                cv2.rectangle(img, (pose.bbox[0], pose.bbox[1]),
-                              (pose.bbox[0] + pose.bbox[2], pose.bbox[1] + pose.bbox[3]), (0, 255, 0))
-                if track:
-                    cv2.putText(img, 'id: {}'.format(pose.id), (pose.bbox[0], pose.bbox[1] - 16),
-                                cv2.FONT_HERSHEY_COMPLEX, 0.5, (0, 0, 255))
-            # cv2.imshow('Lightweight Human Pose Estimation Python Demo', img)
-            cv2.imwrite("./ret_imgs/ret_{}.jpg".format(i), img)
-            print("img index:", i)
-            key = cv2.waitKey(delay)
-            if key == 27:  # esc
-                return
-            elif key == 112:  # 'p'
-                if delay == 1:
-                    delay = 0
-                else:
-                    delay = 1
-
-    time2 = time.time()
-    print("time:", time2 - time1)
-
-
 # 点对点欧拉距离
 def p2p_euclidean(point1: list, point2: list) -> int:
     """
@@ -170,7 +104,7 @@ def p2p_euclidean(point1: list, point2: list) -> int:
     return int(math.sqrt(offset_x ** 2 + offset_y ** 2))
 
 
-#求头部与所有安全帽的最小距离
+# 求头部与所有安全帽的最小距离
 def get_distance(head_points: list, hat_point: list) -> int:
     """
     :param point1: head point :[[x1,y1],[x2,y2],[y3,y3],...]
@@ -181,18 +115,38 @@ def get_distance(head_points: list, hat_point: list) -> int:
     min_dis = 99999
     for head in head_points:
         ret = p2p_euclidean(head, hat_point)
-        print("ret:", ret)
+        # print("p2p_euclidean,ret:", ret)
         if ret < min_dis:
             min_dis = ret
-    print("min dis:", min_dis)
     return min_dis
 
 
 # 判断在阈值范围内，是否有匹配的安全帽
-def is_hat(person: Person_Body, hats_point: list, t: int) -> bool:
+def is_hat(person: Person_Body, hats_point: list, img_area: int) -> bool:
     # 头部平均高度
-    Y = int(np.average(np.array(person.get_head_point()), 0)[1])
+    if person.get_head_point()==[]:
+        return False
+    print("points:",person.get_head_point())
+    np_points=np.array(person.get_head_point())
+    print("points:",np_points)
+    Y = int(np.average(np_points, 0)[1])
     print("头部平均高度", Y)
+    # 求人头坐标间的最大距离
+    points = person.get_head_point()
+    points = np.array(points)
+    max_head_dis = round(np.max(squareform(pdist(points))))
+
+    body_area = person.get_body_area()
+    body_img_rate = body_area / img_area
+    print("body_area:{},人体-图片占比:{}".format(body_area, body_img_rate))
+
+    if body_img_rate > 0.4:
+        print("0.8倍缩小")
+        max_head_dis *= 0.8
+    else:
+        print("1.2倍放大")
+        max_head_dis *= 1.2
+    print("头内坐标间最大距离:", max_head_dis)
 
     for hat in hats_point:
         # 安全帽在人体范围内
@@ -200,22 +154,27 @@ def is_hat(person: Person_Body, hats_point: list, t: int) -> bool:
             print(hat[1])
             print("安全帽低于头部")
             continue
+        # 获取头部和帽子最小距离
         ret = get_distance(person.get_head_point(), hat)
+        print("头帽最小距离:", ret)
+        if max_head_dis > ret:
+            return True
 
-        body_point = person.get_body_point()
-        if body_point[1][0] != -1 or body_point[8][0] != -1:
-            body_2_5 = p2p_euclidean(body_point[2], body_point[5])
-            print("body_2_5:", body_2_5)
-            #头帽距离和肩膀比值
-            proportion = ret / body_2_5
-            print("proportion:", proportion)
-            #对头帽距离进行比例计算
-            ret *= proportion
-            print("ret*proportion:", ret)
-            if proportion < t and ret < t * 10:
-                return True
-        else:
-            return False
+        # body_point = person.get_body_point()
+        # if body_point[1][0] != -1 or body_point[8][0] != -1:
+        # body_2_5 = p2p_euclidean(body_point[2], body_point[5])
+        # print("body_2_5:", body_2_5)
+        # 头帽距离和肩膀比值
+        # proportion = ret / body_2_5
+        # print("头帽距离和肩膀比值:", proportion)
+        # 对头帽距离进行比例计算
+        # ret *= proportion
+        # print("同比放大缩小头帽比:", ret)
+        # if proportion < t and ret < max_head_dis:
+        #     return True
+        # if max_head_dis>ret:
+        #     return True
+
     print("安全帽离开头部")
     return False
 
@@ -267,9 +226,11 @@ def human_pose():
     params = request.json if request.method == "POST" else request.args
     img = base64_decode2cv2(params["img"])
     img = img[0]
-
+    img_h, img_w, img_c = img.shape
+    img_area = img_h * img_w
+    print("img_w:{},img_h:{},img_area:{}".format(img_w, img_h, img_area))
     hat_location = params["hat_location"]
-    t = params["t"]
+    # t = params["t"]
     # 获取安全帽中心点
     hat_centre_points = get_centre_point(hat_location)
     print("安全帽个数:", len(hat_centre_points))
@@ -312,7 +273,7 @@ def human_pose():
             if pose_keypoints[ear][0] == -1 or pose_keypoints[ear][1] == -1:
                 ears_flag = False
                 continue
-            head_point.append(tuple(pose_keypoints[ear]))
+            head_point.append(pose_keypoints[ear])
 
         # 当耳朵关键点完整时推断中心点
         if ears_flag:
@@ -324,7 +285,7 @@ def human_pose():
             y = min(pose_keypoints[17][1], pose_keypoints[16][1])
             y += int(0.5 * offset)
 
-            new_point = (x, y)
+            new_point = [x, y]
             if pose_keypoints[16][1] == pose_keypoints[17][1]:
                 new_point = (x, pose_keypoints[17][1])
             head_point.append(new_point)
@@ -332,7 +293,7 @@ def human_pose():
         face = [0, 14, 15]
         for f in face:
             if pose_keypoints[f][0] != -1 and pose_keypoints[f][1] != -1:
-                head_point.append(tuple(pose_keypoints[f]))
+                head_point.append(pose_keypoints[f])
         if is_drwa:
             # 绘制人体骨骼
             pose.draw(img)
@@ -342,9 +303,11 @@ def human_pose():
 
         # 人体边框坐标列表
         body_list = []
-        expand_rate = 0.3  # 边界扩展因子
-        x1, y1 = (pose.bbox[0], int(pose.bbox[1] - pose.bbox[2] * expand_rate))
-        x2, y2 = (pose.bbox[0] + pose.bbox[2], pose.bbox[1] + pose.bbox[3] + int(pose.bbox[2] * expand_rate))
+        expand_rate_x = 0.15  # 边界扩展因子
+        expand_rate_y = 0.15  # 边界扩展因子
+        x1, y1 = (int(pose.bbox[0] - pose.bbox[0] * expand_rate_x), int(pose.bbox[1] - pose.bbox[1] * expand_rate_y))
+        x2, y2 = (pose.bbox[0] + pose.bbox[2] + int(pose.bbox[2] * expand_rate_x),
+                  pose.bbox[1] + pose.bbox[3] + int(pose.bbox[3] * expand_rate_y))
         body_list.append(x1)
         body_list.append(y1)
         body_list.append(x2)
@@ -354,8 +317,8 @@ def human_pose():
 
     # 遍历匹配人体和安全帽
     for person in person_list:
-        print("\n当前第{}个人".format(person.get_person_index()), )
-        ret = is_hat(person, hat_centre_points, t)
+        print("\n当前第{}个人".format(person.get_person_index()))
+        ret = is_hat(person, hat_centre_points, img_area)
         print("是否戴安全帽：", ret)
         person.set_flag(ret)
 
