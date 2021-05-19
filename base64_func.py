@@ -45,7 +45,7 @@ def base64_encode(img_path=None, file_path=None) -> list:
                 base64_data = str(base64_data, 'utf-8')
                 encode_list.append(base64_data)
 
-                print(type(base64_data))
+                # print(type(base64_data))
                 # print("Encode is done!")
     else:
         assert os.path.exists(img_path), "img is not exists!"

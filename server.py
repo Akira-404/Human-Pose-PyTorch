@@ -1,6 +1,7 @@
 from flask import Flask, jsonify, request
 import numpy as np
 import cv2
+from imutils.object_detection import non_max_suppression
 import math
 import time
 from base64_func import *
@@ -18,6 +19,13 @@ class Person_Body(object):
         self.__body_box = body_box
         self.__body_point = body_point
         self.__flag = False
+        self.__rate = 0
+
+    def set_rate(self, rate):
+        self.__rate = rate
+
+    def get_rate(self):
+        return self.__rate
 
     def get_body_area(self) -> int:
         w = self.__body_box[2] - self.__body_box[0]
@@ -115,7 +123,6 @@ def get_distance(head_points: list, hat_point: list) -> int:
     min_dis = 99999
     for head in head_points:
         ret = p2p_euclidean(head, hat_point)
-        # print("p2p_euclidean,ret:", ret)
         if ret < min_dis:
             min_dis = ret
     return min_dis
@@ -124,11 +131,11 @@ def get_distance(head_points: list, hat_point: list) -> int:
 # 判断在阈值范围内，是否有匹配的安全帽
 def is_hat(person: Person_Body, hats_point: list, img_area: int) -> bool:
     # 头部平均高度
-    if person.get_head_point()==[]:
+    if person.get_head_point() == []:
         return False
-    print("points:",person.get_head_point())
-    np_points=np.array(person.get_head_point())
-    print("points:",np_points)
+    # print("points:", person.get_head_point())
+    np_points = np.array(person.get_head_point())
+    print("head points:", np_points)
     Y = int(np.average(np_points, 0)[1])
     print("头部平均高度", Y)
     # 求人头坐标间的最大距离
@@ -139,11 +146,14 @@ def is_hat(person: Person_Body, hats_point: list, img_area: int) -> bool:
     body_area = person.get_body_area()
     body_img_rate = body_area / img_area
     print("body_area:{},人体-图片占比:{}".format(body_area, body_img_rate))
+    person.set_rate(body_img_rate)
 
     if body_img_rate > 0.4:
         print("0.8倍缩小")
         max_head_dis *= 0.8
     else:
+        if body_img_rate < 0.001:
+            return False
         print("1.2倍放大")
         max_head_dis *= 1.2
     print("头内坐标间最大距离:", max_head_dis)
@@ -151,7 +161,7 @@ def is_hat(person: Person_Body, hats_point: list, img_area: int) -> bool:
     for hat in hats_point:
         # 安全帽在人体范围内
         if hat[1] > Y:
-            print(hat[1])
+            print("安全帽高度:",hat[1])
             print("安全帽低于头部")
             continue
         # 获取头部和帽子最小距离
@@ -159,21 +169,6 @@ def is_hat(person: Person_Body, hats_point: list, img_area: int) -> bool:
         print("头帽最小距离:", ret)
         if max_head_dis > ret:
             return True
-
-        # body_point = person.get_body_point()
-        # if body_point[1][0] != -1 or body_point[8][0] != -1:
-        # body_2_5 = p2p_euclidean(body_point[2], body_point[5])
-        # print("body_2_5:", body_2_5)
-        # 头帽距离和肩膀比值
-        # proportion = ret / body_2_5
-        # print("头帽距离和肩膀比值:", proportion)
-        # 对头帽距离进行比例计算
-        # ret *= proportion
-        # print("同比放大缩小头帽比:", ret)
-        # if proportion < t and ret < max_head_dis:
-        #     return True
-        # if max_head_dis>ret:
-        #     return True
 
     print("安全帽离开头部")
     return False
@@ -301,17 +296,34 @@ def human_pose():
             for p in head_point:
                 cv2.circle(img, tuple(p), 3, BULD, -1)
 
+        # 去除负数项
+        ret = [i for i in pose_keypoints if i[0] > 0]
+        np_pose_keypoints = np.array(ret)
+        # print("ret:",ret)
+        ret = np.min(np_pose_keypoints, 0)
+        x1, y1 = ret
+        ret = np.max(np_pose_keypoints, 0)
+        x2, y2 = ret
+        # print("[{},{}]".format(x1, y1))
+        # print("[{},{}]".format(x2, y2))
+        # print("[{},{}]".format(x2,y2))
+        # x2=np.max(np_pose_keypoints)
+        # y2=np.max(np_pose_keypoints,1)
+        # print("[{},{}],[{},{}]".format(x1,y1,x2,y2))
+
         # 人体边框坐标列表
         body_list = []
-        expand_rate_x = 0.15  # 边界扩展因子
-        expand_rate_y = 0.15  # 边界扩展因子
-        x1, y1 = (int(pose.bbox[0] - pose.bbox[0] * expand_rate_x), int(pose.bbox[1] - pose.bbox[1] * expand_rate_y))
-        x2, y2 = (pose.bbox[0] + pose.bbox[2] + int(pose.bbox[2] * expand_rate_x),
-                  pose.bbox[1] + pose.bbox[3] + int(pose.bbox[3] * expand_rate_y))
-        body_list.append(x1)
-        body_list.append(y1)
-        body_list.append(x2)
-        body_list.append(y2)
+        expand_rate_x = 0.2  # 边界扩展因子
+        expand_rate_y = 0.1  # 边界扩展因子
+        # x1=x1-x1*expand_rate_x
+        # y1 -= x1 * expand_rate_y
+        # x2 += x2 * expand_rate_x
+        # y2 += x2 * expand_rate_y
+
+        body_list.append(int(x1))
+        body_list.append(int(y1))
+        body_list.append(int(x2))
+        body_list.append(int(y2))
         person_body = Person_Body(n, head_point, body_list, pose_keypoints)
         person_list.append(person_body)
 
@@ -332,9 +344,12 @@ def human_pose():
         temp_dic["y1"] = y1
         temp_dic["x2"] = x2
         temp_dic["y2"] = y2
+        temp_dic["rate"] = round(person.get_rate(),5)*100
         temp_dic["flag"] = person.get_flag()
 
         if is_drwa:
+            if person.get_rate() < 0.001:
+                continue
             if person.get_flag():
                 cv2.rectangle(img, (x1, y1), (x2, y2), GREED, 1)
             else:
