@@ -1,3 +1,135 @@
+# 说明
+
+**此项目基于openpose，在openpose上添加安全帽于人体匹配策略，新增文件有base64_func.py input.json output.json server.py**
+
+**base64_func.py用于图片解码编码，保持opencv读取和pillow读取接口，input.json outpu.json用于演示输入输出结果,server.json提供了一个http服务，可用于客户端调用接口**
+
+# 描述
+
+**该请求用于识别一张图片，即对于输入的一张图片（可正常解码，且长宽比较合适），输出人体边框与是否佩戴安全帽与否的标志信息。具体细节请看请求说明**
+
+# 请求说明
+
+## 请求示例
+
+HTTP 方法：`POST`
+
+请求URL： `http://0.0.0.0:24417/`
+
+Header如下：
+
+| 参数         | 值               |
+| ------------ | ---------------- |
+| Content-Type | application/json |
+
+Body中放置请求参数，参数详情如下：
+
+## 请求参数
+
+| 参数名称     | 是否必选 | 类型   | 说明                                                         |
+| ------------ | -------- | ------ | ------------------------------------------------------------ |
+| img          | 必选     | string | 图像数据，base64编码，支持jpg/png/bmp格式。**注意：图片需要base64编码、去掉编码头** |
+| hat_location | 必选     | list   | 包含安全帽的坐标信息，具体描述请看实例                       |
+| +height      | 必选     | int    | 安全帽高低                                                   |
+| +left        | 必选     | int    | 安全帽x轴坐标                                                |
+| +top         | 必选     | int    | 安全帽y轴坐标                                                |
+| +width       | 必选     | int    | 安全帽宽度                                                   |
+
+## 请求代码示例
+
+```json
+{
+    "hat_location": [
+      {
+     			"height": 16,
+                "left": 398,
+                "top": 110,
+                "width": 22
+      },
+      {
+      			"height": 16,
+                "left": 155,
+                "top": 102,
+                "width": 23
+      }
+    ],
+    "img":[
+    			"img base64 code"
+    ]
+}
+```
+
+
+
+## 返回说明
+
+### 返回参数
+
+| 参数    | 类型   | 是否必须 | 说明                                                         |
+| ------- | ------ | -------- | ------------------------------------------------------------ |
+| code    | uint64 | 是       | 状态码                                                       |
+| data    | list   | 是       | 人体坐标数据                                                 |
+| +flag   | bool   | 是       | 是否佩戴安全帽标识符                                         |
+| +rate   | float  | 是       | 人体在图片中的面积占比（在后期可以根据占比，去除占比太小的人体） |
+| +x1     | uint64 | 是       | 左上角x坐标                                                  |
+| +y1     | uint64 | 是       | 左上角y坐标                                                  |
+| +x2     | uint64 | 是       | 右下角x坐标                                                  |
+| +y2     | uint64 | 是       | 右下角y坐标                                                  |
+| message | string | 是       | 提示完成检测                                                 |
+
+### 返回值示例
+
+```json
+{
+    "code": "200",
+    "data": [
+        {
+            "flag": true,
+            "rate": 6.324000000000001,
+            "x1": 171,
+            "x2": 249,
+            "y1": 109,
+            "y2": 244
+        },
+        {
+            "flag": true,
+            "rate": 4.625,
+            "x1": 327,
+            "x2": 382,
+            "y1": 122,
+            "y2": 262
+        },
+        {
+            "flag": true,
+            "rate": 3.108,
+            "x1": 85,
+            "x2": 130,
+            "y1": 98,
+            "y2": 213
+        },
+        {
+            "flag": true,
+            "rate": 5.58,
+            "x1": 262,
+            "x2": 319,
+            "y1": 117,
+            "y2": 280
+        },
+        {
+            "flag": false,
+            "rate": 1.934,
+            "x1": 148,
+            "x2": 176,
+            "y1": 111,
+            "y2": 226
+        }
+    ],
+    "message": "Success"
+}
+```
+
+**以下为原项目说明**
+
 # Real-time 2D Multi-Person Pose Estimation on CPU: Lightweight OpenPose
 
 This repository contains training code for the paper [Real-time 2D Multi-Person Pose Estimation on CPU: Lightweight OpenPose](https://arxiv.org/pdf/1811.12004.pdf). This work heavily optimizes the [OpenPose](https://github.com/CMU-Perceptual-Computing-Lab/openpose) approach to reach real-time inference on CPU with negliable accuracy drop. It detects a skeleton (which consists of keypoints and connections between them) to identify human poses for every person inside the image. The pose may contain up to 18 keypoints: ears, eyes, nose, neck, shoulders, elbows, wrists, hips, knees, and ankles. On COCO 2017 Keypoint Detection validation set this code achives 40% AP for the single scale inference (no flip or any post-processing done). The result can be reproduced using this repository. *This repo significantly overlaps with https://github.com/opencv/openvino_training_extensions, however contains just the necessary code for human pose estimation.*
