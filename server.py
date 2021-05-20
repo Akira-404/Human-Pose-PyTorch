@@ -181,7 +181,7 @@ assert os.path.exists(checkpoint_path) == True, 'weight path is not exists'
 checkpoint = torch.load(checkpoint_path, map_location='cpu')
 load_state(net, checkpoint)
 
-assert os.path.exists("./test_imgs") == True, 'test img file is not exists'
+# assert os.path.exists("./test_imgs") == True, 'test img file is not exists'
 height_size = 256
 cpu = False
 track = 1
