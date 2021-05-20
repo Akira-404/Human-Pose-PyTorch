@@ -4,7 +4,6 @@ models/__pycache__/
 modules/__pycache__/
 ret_imgs/
 test_imgs/
-checkpoint_iter_370000.pth
 
 data/preview.jpg
 data/shake_it_off.jpg
