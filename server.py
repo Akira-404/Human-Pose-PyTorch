@@ -20,6 +20,13 @@ class Person_Body(object):
         self.__body_point = body_point
         self.__flag = False
         self.__rate = 0
+        self.__score = 0
+
+    def set_score(self, score):
+        self.__score = score
+
+    def get_score(self):
+        return self.__score
 
     def set_rate(self, rate):
         self.__rate = rate
@@ -214,7 +221,7 @@ BLACK = (0, 0, 0)
 
 @app.route('/', methods=['POST'])
 def human_pose():
-    is_drwa = True
+    is_drwa = False
 
     output = []
     person_list = []
@@ -310,9 +317,15 @@ def human_pose():
         person_list.append(person_body)
 
     if alarm_type == 2:
-        location_list=hltw2xxyy(location)
-        print(location_list)
+        print("Alarm_type:", alarm_type)
+        cloth_location_list = hltw2xxyy(location)
+        print(cloth_location_list)
+        for person in person_list:
+            print("\n当前第{}个人".format(person.get_person_index()))
+            is_cloth(person, cloth_location_list)
+
     if alarm_type == 3:
+        print("Alarm_type:", alarm_type)
         # 获取安全帽中心点
         hat_centre_points = get_centre_point(location)
         print("安全帽个数:", len(hat_centre_points))
@@ -341,6 +354,7 @@ def human_pose():
         temp_dic["y2"] = y2
         temp_dic["rate"] = round(person.get_rate(), 5) * 100
         temp_dic["flag"] = person.get_flag()
+        temp_dic['score']=person.get_score()
 
         if is_drwa:
             if person.get_rate() < 0.001:
@@ -357,16 +371,18 @@ def human_pose():
 
     return get_result("200", "Success", output)
 
-def hltw2xxyy(location:list)->list:
-    item_all=[]
-    item={}
+
+def hltw2xxyy(location: list) -> list:
+    item_all = []
     for i in location:
-        item['x1']=i['height']
-        item['y1']=i['top']
-        item['x2']=i['height']+i['width']
-        item['y2']=i['height']+i['height']
+        item = []
+        item.append(i['left'])
+        item.append(i['top'])
+        item.append(i['left'] + i['width'])
+        item.append(i['top'] + i['height'])
         item_all.append(item)
     return item_all
+
 
 def mat_inter(box1: list, box2: list) -> bool:
     # 判断两个矩形是否相交
@@ -401,6 +417,19 @@ def solve_coincide(box1: list, box2: list) -> bool:
         return coincide
     else:
         return False
+
+
+def is_cloth(person: Person_Body, cloth_loction: list):
+    rate = 0
+    for cloth in cloth_loction:
+        ret = solve_coincide(cloth, person.get_body_box())
+        if ret > rate:
+            rate = ret
+    person.set_score(rate)
+    if rate >= 0.4:
+        person.set_flag(True)
+
+    print("person i:{},rate:{}".format(person.get_person_index(), rate))
 
 
 def get_centre_point(location: list) -> list:
