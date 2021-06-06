@@ -462,4 +462,4 @@ def get_result(code, message, data):
 
 
 app.config['JSON_AS_ASCII'] = False
-app.run(host='0.0.0.0', port=24417, debug=True, use_reloader=False)
+app.run(host='0.0.0.0', port=24417, debug=False, use_reloader=False)
