@@ -224,7 +224,7 @@ def human_pose():
     img_h, img_w, img_c = img.shape
     img_area = img_h * img_w
     print("img_w:{},img_h:{},img_area:{}".format(img_w, img_h, img_area))
-    hat_location = params["location"]
+    location = params["location"]
     alarm_type = params['alarmtype']
 
     heatmaps, pafs, scale, pad = infer_fast(net, img, height_size, stride, upsample_ratio, cpu)
@@ -310,10 +310,11 @@ def human_pose():
         person_list.append(person_body)
 
     if alarm_type == 2:
-        pass
+        location_list=hltw2xxyy(location)
+        print(location_list)
     if alarm_type == 3:
         # 获取安全帽中心点
-        hat_centre_points = get_centre_point(hat_location)
+        hat_centre_points = get_centre_point(location)
         print("安全帽个数:", len(hat_centre_points))
 
         if is_drwa:
@@ -356,6 +357,16 @@ def human_pose():
 
     return get_result("200", "Success", output)
 
+def hltw2xxyy(location:list)->list:
+    item_all=[]
+    item={}
+    for i in location:
+        item['x1']=i['height']
+        item['y1']=i['top']
+        item['x2']=i['height']+i['width']
+        item['y2']=i['height']+i['height']
+        item_all.append(item)
+    return item_all
 
 def mat_inter(box1: list, box2: list) -> bool:
     # 判断两个矩形是否相交
