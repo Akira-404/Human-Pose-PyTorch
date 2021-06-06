@@ -161,7 +161,7 @@ def is_hat(person: Person_Body, hats_point: list, img_area: int) -> bool:
     for hat in hats_point:
         # 安全帽在人体范围内
         if hat[1] > Y:
-            print("安全帽高度:",hat[1])
+            print("安全帽高度:", hat[1])
             print("安全帽低于头部")
             continue
         # 获取头部和帽子最小距离
@@ -224,16 +224,8 @@ def human_pose():
     img_h, img_w, img_c = img.shape
     img_area = img_h * img_w
     print("img_w:{},img_h:{},img_area:{}".format(img_w, img_h, img_area))
-    hat_location = params["hat_location"]
-    # t = params["t"]
-    # 获取安全帽中心点
-    hat_centre_points = get_centre_point(hat_location)
-    print("安全帽个数:", len(hat_centre_points))
-
-    if is_drwa:
-        # 绘制安全帽中心点
-        for i, p in enumerate(hat_centre_points):
-            cv2.circle(img, tuple(p), 6, WHITE, -1)
+    hat_location = params["location"]
+    alarm_type = params['alarmtype']
 
     heatmaps, pafs, scale, pad = infer_fast(net, img, height_size, stride, upsample_ratio, cpu)
 
@@ -304,21 +296,11 @@ def human_pose():
         x1, y1 = ret
         ret = np.max(np_pose_keypoints, 0)
         x2, y2 = ret
-        # print("[{},{}]".format(x1, y1))
-        # print("[{},{}]".format(x2, y2))
-        # print("[{},{}]".format(x2,y2))
-        # x2=np.max(np_pose_keypoints)
-        # y2=np.max(np_pose_keypoints,1)
-        # print("[{},{}],[{},{}]".format(x1,y1,x2,y2))
 
         # 人体边框坐标列表
         body_list = []
         expand_rate_x = 0.2  # 边界扩展因子
         expand_rate_y = 0.1  # 边界扩展因子
-        # x1=x1-x1*expand_rate_x
-        # y1 -= x1 * expand_rate_y
-        # x2 += x2 * expand_rate_x
-        # y2 += x2 * expand_rate_y
 
         body_list.append(int(x1))
         body_list.append(int(y1))
@@ -327,12 +309,24 @@ def human_pose():
         person_body = Person_Body(n, head_point, body_list, pose_keypoints)
         person_list.append(person_body)
 
-    # 遍历匹配人体和安全帽
-    for person in person_list:
-        print("\n当前第{}个人".format(person.get_person_index()))
-        ret = is_hat(person, hat_centre_points, img_area)
-        print("是否戴安全帽：", ret)
-        person.set_flag(ret)
+    if alarm_type == 2:
+        pass
+    if alarm_type == 3:
+        # 获取安全帽中心点
+        hat_centre_points = get_centre_point(hat_location)
+        print("安全帽个数:", len(hat_centre_points))
+
+        if is_drwa:
+            # 绘制安全帽中心点
+            for i, p in enumerate(hat_centre_points):
+                cv2.circle(img, tuple(p), 6, WHITE, -1)
+
+        # 遍历匹配人体和安全帽
+        for person in person_list:
+            print("\n当前第{}个人".format(person.get_person_index()))
+            ret = is_hat(person, hat_centre_points, img_area)
+            print("是否戴安全帽：", ret)
+            person.set_flag(ret)
 
     for person in person_list:
         temp_dic = {}
@@ -344,7 +338,7 @@ def human_pose():
         temp_dic["y1"] = y1
         temp_dic["x2"] = x2
         temp_dic["y2"] = y2
-        temp_dic["rate"] = round(person.get_rate(),5)*100
+        temp_dic["rate"] = round(person.get_rate(), 5) * 100
         temp_dic["flag"] = person.get_flag()
 
         if is_drwa:
@@ -361,6 +355,41 @@ def human_pose():
         cv2.imwrite("./ret_imgs/ret_{}.jpg".format("test"), img)
 
     return get_result("200", "Success", output)
+
+
+def mat_inter(box1: list, box2: list) -> bool:
+    # 判断两个矩形是否相交
+    # box=(xA,yA,xB,yB)
+    x01, y01, x02, y02 = box1
+    x11, y11, x12, y12 = box2
+
+    lx = abs((x01 + x02) / 2 - (x11 + x12) / 2)
+    ly = abs((y01 + y02) / 2 - (y11 + y12) / 2)
+    sax = abs(x01 - x02)
+    sbx = abs(x11 - x12)
+    say = abs(y01 - y02)
+    sby = abs(y11 - y12)
+    if lx <= (sax + sbx) / 2 and ly <= (say + sby) / 2:
+        return True
+    else:
+        return False
+
+
+def solve_coincide(box1: list, box2: list) -> bool:
+    # box=(xA,yA,xB,yB)
+    # 计算两个矩形框的重合度
+    if mat_inter(box1, box2) == True:
+        x01, y01, x02, y02 = box1
+        x11, y11, x12, y12 = box2
+        col = min(x02, x12) - max(x01, x11)
+        row = min(y02, y12) - max(y01, y11)
+        intersection = col * row
+        area1 = (x02 - x01) * (y02 - y01)
+        area2 = (x12 - x11) * (y12 - y11)
+        coincide = intersection / (area1 + area2 - intersection)
+        return coincide
+    else:
+        return False
 
 
 def get_centre_point(location: list) -> list:

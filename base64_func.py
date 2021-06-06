@@ -78,6 +78,7 @@ def base64_decode2cv2(base64_data_list: list) -> list:
     """
     cv2_img_data_list = []
     for i, data in enumerate(base64_data_list):
+        print("==========",type(data))
         imgData = base64.b64decode(data)
         nparr = np.fromstring(imgData, np.uint8)
         img_np = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
