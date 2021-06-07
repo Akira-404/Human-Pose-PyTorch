@@ -20,7 +20,7 @@ class Person_Body(object):
         self.__body_point = body_point
         self.__flag = False
         self.__rate = 0
-        self.__score = 0
+        self.__score = 1
 
     def set_score(self, score):
         self.__score = score
@@ -354,7 +354,7 @@ def human_pose():
         temp_dic["y2"] = y2
         temp_dic["rate"] = round(person.get_rate(), 5) * 100
         temp_dic["flag"] = person.get_flag()
-        temp_dic['score']=person.get_score()
+        temp_dic['score'] = person.get_score()
 
         if is_drwa:
             if person.get_rate() < 0.001:
@@ -405,7 +405,7 @@ def mat_inter(box1: list, box2: list) -> bool:
 def solve_coincide(box1: list, box2: list) -> bool:
     # box=(xA,yA,xB,yB)
     # 计算两个矩形框的重合度
-    if mat_inter(box1, box2) == True:
+    if mat_inter(box1, box2) is True:
         x01, y01, x02, y02 = box1
         x11, y11, x12, y12 = box2
         col = min(x02, x12) - max(x01, x11)
