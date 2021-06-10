@@ -219,6 +219,90 @@ PURPLE = (160, 32, 240)
 BLACK = (0, 0, 0)
 
 
+@app.route('/get_body_box', methods=['POST'])
+def get_body_box():
+    print("Function:get body box")
+    is_drwa = True
+
+    output = []
+    person_list = []
+    params = request.json if request.method == "POST" else request.args
+    img = base64_decode2cv2(params["img"])
+    img = img[0]
+
+    heatmaps, pafs, scale, pad = infer_fast(net, img, height_size, stride, upsample_ratio, cpu)
+
+    total_keypoints_num = 0
+    all_keypoints_by_type = []
+    for kpt_idx in range(num_keypoints):  # 19th for bg
+        total_keypoints_num += extract_keypoints(heatmaps[:, :, kpt_idx], all_keypoints_by_type,
+                                                 total_keypoints_num)
+
+    pose_entries, all_keypoints = group_keypoints(all_keypoints_by_type, pafs)
+    for kpt_id in range(all_keypoints.shape[0]):
+        all_keypoints[kpt_id, 0] = (all_keypoints[kpt_id, 0] * stride / upsample_ratio - pad[1]) / scale
+        all_keypoints[kpt_id, 1] = (all_keypoints[kpt_id, 1] * stride / upsample_ratio - pad[0]) / scale
+
+    print("人体个数：", len(pose_entries))
+    for n in range(len(pose_entries)):
+        head_point = []
+        if len(pose_entries[n]) == 0:
+            continue
+        pose_keypoints = np.ones((num_keypoints, 2), dtype=np.int32) * -1
+        for kpt_id in range(num_keypoints):
+            if pose_entries[n][kpt_id] != -1.0:  # keypoint was found
+                pose_keypoints[kpt_id, 0] = int(all_keypoints[int(pose_entries[n][kpt_id]), 0])
+                pose_keypoints[kpt_id, 1] = int(all_keypoints[int(pose_entries[n][kpt_id]), 1])
+
+        pose = Pose(pose_keypoints, pose_entries[n][18])
+
+        # 去除负数项
+        ret = [i for i in pose_keypoints if i[0] > 0]
+        np_pose_keypoints = np.array(ret)
+        # print("ret:",ret)
+        ret = np.min(np_pose_keypoints, 0)
+        x1, y1 = ret
+        ret = np.max(np_pose_keypoints, 0)
+        x2, y2 = ret
+
+        # 人体边框坐标列表
+        body_list = []
+
+        body_list.append(int(x1))
+        body_list.append(int(y1))
+        body_list.append(int(x2))
+        body_list.append(int(y2))
+        person_body = Person_Body(n, head_point, body_list, pose_keypoints)
+        person_list.append(person_body)
+
+    if not person_list:
+        return get_result("200", "Empty", [])
+    for person in person_list:
+        temp_dic = {}
+        box = person.get_body_box()
+        x1, y1 = (box[0], box[1])
+        x2, y2 = (box[2], box[3])
+
+        temp_dic["x1"] = x1
+        temp_dic["y1"] = y1
+        temp_dic["x2"] = x2
+        temp_dic["y2"] = y2
+        temp_dic["rate"] = round(person.get_rate(), 5) * 100
+        temp_dic["flag"] = person.get_flag()
+        temp_dic['score'] = person.get_score()
+
+        if is_drwa:
+            if person.get_score():
+                cv2.rectangle(img, (x1, y1), (x2, y2), GREED, 1)
+        output.append(temp_dic)
+
+    print("output:", output)
+    if is_drwa:
+        cv2.imwrite("./ret_imgs/ret_{}.jpg".format("test"), img)
+
+    return get_result("200", "Success", output)
+
+
 @app.route('/', methods=['POST'])
 def human_pose():
     is_drwa = False
