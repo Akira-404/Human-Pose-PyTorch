@@ -218,6 +218,7 @@ WHITE = (255, 255, 255)
 PURPLE = (160, 32, 240)
 BLACK = (0, 0, 0)
 
+
 @app.route('/get_head_point', methods=['POST'])
 def get_head_point():
     """
@@ -314,7 +315,7 @@ def get_head_point_v2():
       :return:{"location":[[[x,y],[x,y],...],[[x,y],[x,y],...],...]}
       """
     print("Function:get the head point")
-    is_drwa =True
+    is_drwa = True
 
     params = request.json if request.method == "POST" else request.args
     imgs = base64_decode2cv2(params["img"])
@@ -391,7 +392,7 @@ def get_head_point_v2():
                 # 绘制头部关键点
                 for p in head_point:
                     cv2.circle(img, tuple(p), 3, BULD, -1)
-                cv2.imwrite("./img.jpg",img)
+                cv2.imwrite("./img.jpg", img)
                 cv2.waitKey(0)
             location.append(head_point)
     return get_result("200", "Success", location)
@@ -466,10 +467,10 @@ def get_body_box():
         # temp_dic["x2"] = x2
         # temp_dic["y2"] = y2
 
-        temp_dic["height"] = y2-y1
+        temp_dic["height"] = y2 - y1
         temp_dic["left"] = x1
         temp_dic["top"] = y1
-        temp_dic["width"] = x2-x1
+        temp_dic["width"] = x2 - x1
 
         temp_dic["rate"] = round(person.get_rate(), 5) * 100
         temp_dic["flag"] = person.get_flag()
