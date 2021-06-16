@@ -218,9 +218,97 @@ WHITE = (255, 255, 255)
 PURPLE = (160, 32, 240)
 BLACK = (0, 0, 0)
 
-
 @app.route('/get_head_point', methods=['POST'])
 def get_head_point():
+    """
+      input:{"img":["img_base64","img_base64",...]}
+      :return:{"location":[[[x,y],[x,y],...],[[x,y],[x,y],...],...]}
+      """
+    print("Function:get the head point")
+    is_drwa = False
+
+    params = request.json if request.method == "POST" else request.args
+    imgs = base64_decode2cv2(params["img"])
+    # for i,img in enumerate(imgs):
+    #     cv2.imwrite("{}.jpg".format(i),img)
+
+    location = []
+    for img in imgs:
+        heatmaps, pafs, scale, pad = infer_fast(net, img, height_size, stride, upsample_ratio, cpu)
+
+        total_keypoints_num = 0
+        all_keypoints_by_type = []
+        for kpt_idx in range(num_keypoints):  # 19th for bg
+            total_keypoints_num += extract_keypoints(heatmaps[:, :, kpt_idx], all_keypoints_by_type,
+                                                     total_keypoints_num)
+
+        pose_entries, all_keypoints = group_keypoints(all_keypoints_by_type, pafs)
+        for kpt_id in range(all_keypoints.shape[0]):
+            all_keypoints[kpt_id, 0] = (all_keypoints[kpt_id, 0] * stride / upsample_ratio - pad[1]) / scale
+            all_keypoints[kpt_id, 1] = (all_keypoints[kpt_id, 1] * stride / upsample_ratio - pad[0]) / scale
+
+        print("人体个数：", len(pose_entries))
+
+        head_point = []
+        for n in range(len(pose_entries)):
+            head_point = []
+            if len(pose_entries[n]) == 0:
+                continue
+            # pose_keypoints = np.ones((num_keypoints, 2), dtype=np.int32) * -1
+            pose_keypoints = np.ones((num_keypoints, 2), dtype=int) * -1
+            for kpt_id in range(num_keypoints):
+                if pose_entries[n][kpt_id] != -1.0:  # keypoint was found
+                    pose_keypoints[kpt_id, 0] = int(all_keypoints[int(pose_entries[n][kpt_id]), 0])
+                    pose_keypoints[kpt_id, 1] = int(all_keypoints[int(pose_entries[n][kpt_id]), 1])
+
+            pose = Pose(pose_keypoints, pose_entries[n][18])
+            # 耳朵关键点
+            ears = [16, 17]
+            ears_flag = True
+            for ear in ears:
+                # print("pose_keypoints[ear]:",pose_keypoints[ear])
+                if pose_keypoints[ear][0] == -1 or pose_keypoints[ear][1] == -1:
+                    ears_flag = False
+                    continue
+                # print('1:',type(pose_keypoints[ear].tolist()))
+
+                temp_point = [int(pose_keypoints[ear][0]), int(pose_keypoints[ear][1])]
+                head_point.append(temp_point)
+
+            # 当耳朵关键点完整时推断中心点
+            if ears_flag:
+                offset = abs(pose_keypoints[17][0] - pose_keypoints[16][0])
+                x = min(pose_keypoints[17][0], pose_keypoints[16][0])
+                x += int(0.5 * offset)
+
+                offset = abs(pose_keypoints[17][1] - pose_keypoints[16][1])
+                y = min(pose_keypoints[17][1], pose_keypoints[16][1])
+                y += int(0.5 * offset)
+
+                new_point = [int(x), int(y)]
+                if pose_keypoints[16][1] == pose_keypoints[17][1]:
+                    new_point = (int(x), int(pose_keypoints[17][1]))
+
+                print(type(new_point[0]), type(new_point[0]))
+                head_point.append(new_point)
+
+            face = [0, 14, 15]
+            for f in face:
+                if pose_keypoints[f][0] != -1 and pose_keypoints[f][1] != -1:
+                    temp_point = [int(pose_keypoints[f][0]), int(pose_keypoints[f][1])]
+                    head_point.append(temp_point)
+            if is_drwa:
+                # 绘制人体骨骼
+                pose.draw(img)
+                # 绘制头部关键点
+                for p in head_point:
+                    cv2.circle(img, tuple(p), 3, BULD, -1)
+        location.append(head_point)
+    return get_result("200", "Success", location)
+
+
+@app.route('/get_head_point_v2', methods=['POST'])
+def get_head_point_v2():
     """
       input:{"img":["img_base64","img_base64",...]}
       :return:{"location":[[[x,y],[x,y],...],[[x,y],[x,y],...],...]}
