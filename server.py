@@ -222,16 +222,18 @@ BLACK = (0, 0, 0)
 @app.route('/get_head_point', methods=['POST'])
 def get_head_point():
     """
-    input:{"img":["img_base64","img_base64",...]}
-    :return:{"location":[[[x,y],[x,y],...],[[x,y],[x,y],...],...]}
-    """
+      input:{"img":["img_base64","img_base64",...]}
+      :return:{"location":[[[x,y],[x,y],...],[[x,y],[x,y],...],...]}
+      """
     print("Function:get the head point")
     is_drwa = False
 
     params = request.json if request.method == "POST" else request.args
     imgs = base64_decode2cv2(params["img"])
+    # for i,img in enumerate(imgs):
+    #     cv2.imwrite("{}.jpg".format(i),img)
 
-    location=[]
+    location = []
     for img in imgs:
         heatmaps, pafs, scale, pad = infer_fast(net, img, height_size, stride, upsample_ratio, cpu)
 
@@ -253,7 +255,8 @@ def get_head_point():
             head_point = []
             if len(pose_entries[n]) == 0:
                 continue
-            pose_keypoints = np.ones((num_keypoints, 2), dtype=np.int32) * -1
+            # pose_keypoints = np.ones((num_keypoints, 2), dtype=np.int32) * -1
+            pose_keypoints = np.ones((num_keypoints, 2), dtype=int) * -1
             for kpt_id in range(num_keypoints):
                 if pose_entries[n][kpt_id] != -1.0:  # keypoint was found
                     pose_keypoints[kpt_id, 0] = int(all_keypoints[int(pose_entries[n][kpt_id]), 0])
@@ -264,10 +267,14 @@ def get_head_point():
             ears = [16, 17]
             ears_flag = True
             for ear in ears:
+                # print("pose_keypoints[ear]:",pose_keypoints[ear])
                 if pose_keypoints[ear][0] == -1 or pose_keypoints[ear][1] == -1:
                     ears_flag = False
                     continue
-                head_point.append(pose_keypoints[ear])
+                # print('1:',type(pose_keypoints[ear].tolist()))
+
+                temp_point = [int(pose_keypoints[ear][0]), int(pose_keypoints[ear][1])]
+                head_point.append(temp_point)
 
             # 当耳朵关键点完整时推断中心点
             if ears_flag:
@@ -279,15 +286,18 @@ def get_head_point():
                 y = min(pose_keypoints[17][1], pose_keypoints[16][1])
                 y += int(0.5 * offset)
 
-                new_point = [x, y]
+                new_point = [int(x), int(y)]
                 if pose_keypoints[16][1] == pose_keypoints[17][1]:
-                    new_point = (x, pose_keypoints[17][1])
+                    new_point = (int(x), int(pose_keypoints[17][1]))
+
+                print(type(new_point[0]), type(new_point[0]))
                 head_point.append(new_point)
 
             face = [0, 14, 15]
             for f in face:
                 if pose_keypoints[f][0] != -1 and pose_keypoints[f][1] != -1:
-                    head_point.append(pose_keypoints[f])
+                    temp_point = [int(pose_keypoints[f][0]), int(pose_keypoints[f][1])]
+                    head_point.append(temp_point)
             if is_drwa:
                 # 绘制人体骨骼
                 pose.draw(img)
