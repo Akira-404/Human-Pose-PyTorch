@@ -12,7 +12,7 @@ from modules.pose import Pose, track_poses
 from scipy.spatial.distance import pdist, squareform
 
 
-class Person_Body(object):
+class PersonBody(object):
     def __init__(self, index, head_point: list, body_box: list, body_point: list):
         self.__index = index
         self.__head_point = head_point
@@ -80,8 +80,14 @@ def pad_width(img, stride, pad_value, min_dims):
     return padded_img, pad
 
 
-def infer_fast(net, img, net_input_height_size, stride, upsample_ratio, cpu,
-               pad_value=(0, 0, 0), img_mean=np.array([128, 128, 128], np.float32), img_scale=np.float32(1 / 256)):
+def infer_fast(net,
+               img,
+               net_input_height_size,
+               stride, upsample_ratio,
+               cpu,
+               pad_value=(0, 0, 0),
+               img_mean=np.array([128, 128, 128], np.float32),
+               img_scale=np.float32(1 / 256)):
     height, width, _ = img.shape
     scale = net_input_height_size / height
 
@@ -95,15 +101,18 @@ def infer_fast(net, img, net_input_height_size, stride, upsample_ratio, cpu,
         tensor_img = tensor_img.cuda()
 
     stages_output = net(tensor_img)
+    # print("stages_output:",len(stages_output))
 
     stage2_heatmaps = stages_output[-2]
     heatmaps = np.transpose(stage2_heatmaps.squeeze().cpu().data.numpy(), (1, 2, 0))
     heatmaps = cv2.resize(heatmaps, (0, 0), fx=upsample_ratio, fy=upsample_ratio, interpolation=cv2.INTER_CUBIC)
 
+    # print("heatmaps:",heatmaps.shape)
     stage2_pafs = stages_output[-1]
     pafs = np.transpose(stage2_pafs.squeeze().cpu().data.numpy(), (1, 2, 0))
     pafs = cv2.resize(pafs, (0, 0), fx=upsample_ratio, fy=upsample_ratio, interpolation=cv2.INTER_CUBIC)
 
+    # print("pafs:",pafs.shape)
     return heatmaps, pafs, scale, pad
 
 
@@ -136,7 +145,7 @@ def get_distance(head_points: list, hat_point: list) -> int:
 
 
 # 判断在阈值范围内，是否有匹配的安全帽
-def is_hat(person: Person_Body, hats_point: list, img_area: int) -> bool:
+def is_hat(person: PersonBody, hats_point: list, img_area: int) -> bool:
     # 头部平均高度
     if person.get_head_point() == []:
         return False
@@ -232,7 +241,7 @@ def get_head_point():
     imgs = base64_decode2cv2(params["img"])
     # for i,img in enumerate(imgs):
     #     cv2.imwrite("{}.jpg".format(i),img)
-    img=imgs[0]
+    img = imgs[0]
     location = []
     # for img in imgs:
     heatmaps, pafs, scale, pad = infer_fast(net, img, height_size, stride, upsample_ratio, cpu)
@@ -312,9 +321,9 @@ def get_head_point():
 @app.route('/get_head_point_v2', methods=['POST'])
 def get_head_point_v2():
     """
-      input:{"img":["img_base64","img_base64",...]}
-      :return:{"location":[[[x,y],[x,y],...],[[x,y],[x,y],...],...]}
-      """
+    input:{"img":["img_base64","img_base64",...]}
+    :return:{"location":[[[x,y],[x,y],...],[[x,y],[x,y],...],...]}
+    """
     print("Function:get the head point")
     is_drwa = True
 
@@ -452,8 +461,8 @@ def get_body_box():
         body_list.append(int(y1))
         body_list.append(int(x2))
         body_list.append(int(y2))
-        person_body = Person_Body(n, head_point, body_list, pose_keypoints)
-        person_list.append(person_body)
+        PersonBody = PersonBody(n, head_point, body_list, pose_keypoints)
+        person_list.append(PersonBody)
 
     if not person_list:
         return get_result("200", "Empty", [])
@@ -518,6 +527,7 @@ def human_pose():
         all_keypoints[kpt_id, 1] = (all_keypoints[kpt_id, 1] * stride / upsample_ratio - pad[0]) / scale
 
     print("人体个数：", len(pose_entries))
+    print('pose_entries:', pose_entries)
     for n in range(len(pose_entries)):
         head_point = []
         if len(pose_entries[n]) == 0:
@@ -583,8 +593,8 @@ def human_pose():
         body_list.append(int(y1))
         body_list.append(int(x2))
         body_list.append(int(y2))
-        person_body = Person_Body(n, head_point, body_list, pose_keypoints)
-        person_list.append(person_body)
+        PersonBody = PersonBody(n, head_point, body_list, pose_keypoints)
+        person_list.append(PersonBody)
 
     if alarm_type == 2:
         print("Alarm_type:", alarm_type)
@@ -689,7 +699,7 @@ def solve_coincide(box1: list, box2: list) -> bool:
         return False
 
 
-def is_cloth(person: Person_Body, cloth_loction: list):
+def is_cloth(person: PersonBody, cloth_loction: list):
     rate = 0
     for cloth in cloth_loction:
         ret = solve_coincide(cloth, person.get_body_box())
@@ -731,5 +741,54 @@ def get_result(code, message, data):
     return jsonify(result)
 
 
-app.config['JSON_AS_ASCII'] = False
-app.run(host='0.0.0.0', port=24417, debug=False, use_reloader=False)
+def test_():
+    img_dir = './1.jpg'
+
+    # for img_name in os.listdir(img_dir):
+    # img_path = os.path.join(img_dir, img_name)
+    img = cv2.imread('1.jpg')
+
+    heatmaps, pafs, scale, pad = infer_fast(net, img, height_size, stride, upsample_ratio, cpu)
+    total_keypoints_num = 0
+    all_keypoints_by_type = []
+    for kpt_idx in range(num_keypoints):  # 19th for bg
+        total_keypoints_num += extract_keypoints(heatmaps[:, :, kpt_idx], all_keypoints_by_type,
+                                                 total_keypoints_num)
+
+    pose_entries, all_keypoints = group_keypoints(all_keypoints_by_type, pafs)
+
+    for kpt_id in range(all_keypoints.shape[0]):
+        all_keypoints[kpt_id, 0] = (all_keypoints[kpt_id, 0] * stride / upsample_ratio - pad[1]) / scale
+        all_keypoints[kpt_id, 1] = (all_keypoints[kpt_id, 1] * stride / upsample_ratio - pad[0]) / scale
+
+    print(len(pose_entries))
+    # print('pose_entries:', pose_entries)
+
+    for n in range(len(pose_entries)):
+        head_point = []
+        if len(pose_entries[n]) == 0:
+            continue
+        # num_keypoints=18
+        pose_keypoints = np.ones((num_keypoints, 2), dtype=np.int32) * -1
+        for kpt_id in range(num_keypoints):
+            if pose_entries[n][kpt_id] != -1.0:  # keypoint was found
+                pose_keypoints[kpt_id, 0] = int(all_keypoints[int(pose_entries[n][kpt_id]), 0])
+                pose_keypoints[kpt_id, 1] = int(all_keypoints[int(pose_entries[n][kpt_id]), 1])
+
+        # print(pose_entries[n])
+        red = (0, 0, 255)
+        blue = (255, 0, 0)
+        color = (red, blue)
+        print(pose_keypoints)
+        for i, point in enumerate(pose_keypoints):
+            if point[0] == -1:
+                continue
+
+            cv2.circle(img, (int(point[0]), int(point[1])), 3, color[n], -1)
+            cv2.imwrite('/home/ubuntu/下载/people/{}.jpg'.format(1624502462995), img)
+
+
+if __name__ == '__main__':
+    test_()
+    # app.config['JSON_AS_ASCII'] = False
+    # app.run(host='0.0.0.0', port=24417, debug=False, use_reloader=False)
