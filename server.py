@@ -1,61 +1,16 @@
-from flask import Flask, jsonify, request
-import numpy as np
-import cv2
-from imutils.object_detection import non_max_suppression
 import math
-import time
-from base64_func import *
+
+import cv2
+import numpy as np
+from flask import Flask, jsonify, request
 from models.with_mobilenet import PoseEstimationWithMobileNet
 from modules.keypoints import extract_keypoints, group_keypoints
 from modules.load_state import load_state
 from modules.pose import Pose, track_poses
 from scipy.spatial.distance import pdist, squareform
 
-
-class PersonBody(object):
-    def __init__(self, index, head_point: list, body_box: list, body_point: list):
-        self.__index = index
-        self.__head_point = head_point
-        self.__body_box = body_box
-        self.__body_point = body_point
-        self.__flag = False
-        self.__rate = 0
-        self.__score = 1
-
-    def set_score(self, score):
-        self.__score = score
-
-    def get_score(self):
-        return self.__score
-
-    def set_rate(self, rate):
-        self.__rate = rate
-
-    def get_rate(self):
-        return self.__rate
-
-    def get_body_area(self) -> int:
-        w = self.__body_box[2] - self.__body_box[0]
-        h = self.__body_box[3] - self.__body_box[1]
-        return w * h
-
-    def get_person_index(self) -> int:
-        return self.__index
-
-    def get_head_point(self) -> list:
-        return self.__head_point
-
-    def get_body_point(self) -> list:
-        return self.__body_point
-
-    def get_body_box(self) -> list:
-        return self.__body_box
-
-    def get_flag(self) -> bool:
-        return self.__flag
-
-    def set_flag(self, status: bool):
-        self.__flag = status
+from base64_func import *
+from tools import PersonBody
 
 
 def normalize(img, img_mean, img_scale):
@@ -230,17 +185,12 @@ BLACK = (0, 0, 0)
 
 @app.route('/get_head_point', methods=['POST'])
 def get_head_point():
-    """
-      input:{"img":["img_base64","img_base64",...]}
-      :return:{"location":[[[x,y],[x,y],...],[[x,y],[x,y],...],...]}
-      """
     print("Function:get the head point")
     is_drwa = False
 
     params = request.json if request.method == "POST" else request.args
     imgs = base64_decode2cv2(params["img"])
-    # for i,img in enumerate(imgs):
-    #     cv2.imwrite("{}.jpg".format(i),img)
+
     img = imgs[0]
     location = []
     # for img in imgs:
@@ -320,17 +270,11 @@ def get_head_point():
 
 @app.route('/get_head_point_v2', methods=['POST'])
 def get_head_point_v2():
-    """
-    input:{"img":["img_base64","img_base64",...]}
-    :return:{"location":[[[x,y],[x,y],...],[[x,y],[x,y],...],...]}
-    """
     print("Function:get the head point")
     is_drwa = True
 
     params = request.json if request.method == "POST" else request.args
     imgs = base64_decode2cv2(params["img"])
-    # for i,img in enumerate(imgs):
-    #     cv2.imwrite("{}.jpg".format(i),img)
 
     location = []
     for img in imgs:
@@ -741,31 +685,27 @@ def get_result(code, message, data):
     return jsonify(result)
 
 
-def test_():
-    img_dir = './1.jpg'
-
-    # for img_name in os.listdir(img_dir):
-    # img_path = os.path.join(img_dir, img_name)
-    img = cv2.imread('1.jpg')
-
+def test_(path):
+    img = cv2.imread(path)
     heatmaps, pafs, scale, pad = infer_fast(net, img, height_size, stride, upsample_ratio, cpu)
     total_keypoints_num = 0
     all_keypoints_by_type = []
     for kpt_idx in range(num_keypoints):  # 19th for bg
         total_keypoints_num += extract_keypoints(heatmaps[:, :, kpt_idx], all_keypoints_by_type,
                                                  total_keypoints_num)
-
     pose_entries, all_keypoints = group_keypoints(all_keypoints_by_type, pafs)
 
     for kpt_id in range(all_keypoints.shape[0]):
         all_keypoints[kpt_id, 0] = (all_keypoints[kpt_id, 0] * stride / upsample_ratio - pad[1]) / scale
         all_keypoints[kpt_id, 1] = (all_keypoints[kpt_id, 1] * stride / upsample_ratio - pad[0]) / scale
 
-    print(len(pose_entries))
+    # print(' all_keypoints.shape[0]:', all_keypoints)
+    # print('People Num:', len(pose_entries))
+    # for item in pose_entries:
+    #     print(item)
     # print('pose_entries:', pose_entries)
 
     for n in range(len(pose_entries)):
-        head_point = []
         if len(pose_entries[n]) == 0:
             continue
         # num_keypoints=18
@@ -775,20 +715,53 @@ def test_():
                 pose_keypoints[kpt_id, 0] = int(all_keypoints[int(pose_entries[n][kpt_id]), 0])
                 pose_keypoints[kpt_id, 1] = int(all_keypoints[int(pose_entries[n][kpt_id]), 1])
 
+        pose = Pose(pose_keypoints, pose_entries[n][18])
+        points=pose.draw(img)
+        print('points:',len(points))
+        print(points)
+        # bbox=pose.get_bbox(pose_keypoints)
         # print(pose_entries[n])
         red = (0, 0, 255)
         blue = (255, 0, 0)
-        color = (red, blue)
-        print(pose_keypoints)
-        for i, point in enumerate(pose_keypoints):
-            if point[0] == -1:
-                continue
-
+        green = (0, 255, 0)
+        yellow = (255, 0, 0)
+        hot_pink = (255, 105, 180)
+        color = (red, blue, green, yellow, hot_pink)
+        # print(pose_keypoints)
+        for i, point in enumerate(points):
             cv2.circle(img, (int(point[0]), int(point[1])), 3, color[n], -1)
-            cv2.imwrite('/home/ubuntu/下载/people/{}.jpg'.format(1624502462995), img)
+
+            # cv2.imwrite('/home/ubuntu/下载/people/{}.jpg'.format(1624502462995), img)
+        # 去除负数项
+        ret = [i for i in points if i[0] > 0]
+        np_pose_keypoints = np.array(ret)
+        print("ret:",np_pose_keypoints)
+        ret = np.min(np_pose_keypoints, 0)
+        x1, y1 = ret
+        ret = np.max(np_pose_keypoints, 0)
+        x2, y2 = ret
+
+        # x1,y1=bbox[0],bbox[1]
+        # x2,y2=bbox[2],bbox[3]
+        # print(bbox)
+        # cv2.rectangle(img, (int(x1), int(y1)), (int(x2), int(y2)), blue, 1)
+    return img
+
+
+def flask_run():
+    app.config['JSON_AS_ASCII'] = False
+    app.run(host='0.0.0.0', port=24417, debug=False, use_reloader=False)
 
 
 if __name__ == '__main__':
-    test_()
-    # app.config['JSON_AS_ASCII'] = False
-    # app.run(host='0.0.0.0', port=24417, debug=False, use_reloader=False)
+    # imgs = os.listdir('./download_imgs')
+    # for img in imgs:
+    #     img_path = os.path.join('./download_imgs', img)
+    #     image = test_(img_path)
+    #     cv2.imshow('{}'.format(img), image)
+    #     cv2.waitKey(0)
+    image = test_('./download_imgs/12.jpg')
+    cv2.imshow('{}'.format(10), image)
+    cv2.waitKey(0)
+
+    # flask_run()
