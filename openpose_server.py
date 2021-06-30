@@ -768,20 +768,20 @@ def flask_run():
 
 
 if __name__ == '__main__':
-    imgs = os.listdir('./download_imgs')
-    for i, img in enumerate(imgs):
-        if i > 100:
-            break
-        print('{}'.format(img))
-        img_path = os.path.join('./download_imgs', img)
-        image = test_(img_path)
-        cv2.imshow('{}'.format(img), image)
-        # cv2.imwrite('./out_imgs/{}'.format(img), image)
-        cv2.waitKey(0)
-        cv2.destroyWindow('{}'.format(img))
+    # imgs = os.listdir('./download_imgs')
+    # for i, img in enumerate(imgs):
+    #     if i > 100:
+    #         break
+    #     print('{}'.format(img))
+    #     img_path = os.path.join('./download_imgs', img)
+    #     image = test_(img_path)
+    #     cv2.imshow('{}'.format(img), image)
+    #     # cv2.imwrite('./out_imgs/{}'.format(img), image)
+    #     cv2.waitKey(0)
+    #     cv2.destroyWindow('{}'.format(img))
 
     # image = test_('./download_imgs/10.jpg')
     # cv2.imshow('{}'.format(10), image)
     # cv2.waitKey(0)
 
-    # flask_run()
+    flask_run()
