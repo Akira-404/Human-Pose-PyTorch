@@ -1,16 +1,13 @@
 import math
 
-import cv2
-import numpy as np
 from flask import Flask, jsonify, request
 from models.with_mobilenet import PoseEstimationWithMobileNet
 from modules.keypoints import extract_keypoints, group_keypoints
 from modules.load_state import load_state
 from modules.pose import Pose, track_poses
-from scipy.spatial.distance import pdist, squareform
 
 from base64_func import *
-from tools import PersonBody
+import modules.keypoints as keypoints
 
 
 def normalize(img, img_mean, img_scale):
@@ -71,84 +68,84 @@ def infer_fast(net,
     return heatmaps, pafs, scale, pad
 
 
-# 点对点欧拉距离
-def p2p_euclidean(point1: list, point2: list) -> int:
-    """
-    :param point1:[x1,y1]
-    :param point2:[x2,y2]
-    :return:distance
-    """
-    offset_x = point1[0] - point2[0]
-    offset_y = point1[1] - point2[1]
-    return int(math.sqrt(offset_x ** 2 + offset_y ** 2))
-
-
-# 求头部与所有安全帽的最小距离
-def get_distance(head_points: list, hat_point: list) -> int:
-    """
-    :param point1: head point :[[x1,y1],[x2,y2],[y3,y3],...]
-    :param points: hat points:[x1,y1]
-    :return: min distance
-    """
-
-    min_dis = 99999
-    for head in head_points:
-        ret = p2p_euclidean(head, hat_point)
-        if ret < min_dis:
-            min_dis = ret
-    return min_dis
-
-
-# 判断在阈值范围内，是否有匹配的安全帽
-def is_hat(person: PersonBody, hats_point: list, img_area: int) -> bool:
-    # 头部平均高度
-    if person.get_head_point() == []:
-        return False
-    # print("points:", person.get_head_point())
-    np_points = np.array(person.get_head_point())
-    print("head points:", np_points)
-    Y = int(np.average(np_points, 0)[1])
-    print("头部平均高度", Y)
-    # 求人头坐标间的最大距离
-    points = person.get_head_point()
-    points = np.array(points)
-    max_head_dis = round(np.max(squareform(pdist(points))))
-
-    body_area = person.get_body_area()
-    body_img_rate = body_area / img_area
-    print("body_area:{},人体-图片占比:{}".format(body_area, body_img_rate))
-    person.set_rate(body_img_rate)
-
-    if body_img_rate > 0.4:
-        print("0.8倍缩小")
-        max_head_dis *= 0.8
-    else:
-        if body_img_rate < 0.001:
-            return False
-        print("1.2倍放大")
-        max_head_dis *= 1.2
-    print("头内坐标间最大距离:", max_head_dis)
-
-    for hat in hats_point:
-        # 安全帽在人体范围内
-        if hat[1] > Y:
-            print("安全帽高度:", hat[1])
-            print("安全帽低于头部")
-            continue
-        # 获取头部和帽子最小距离
-        ret = get_distance(person.get_head_point(), hat)
-        print("头帽最小距离:", ret)
-        if max_head_dis > ret:
-            return True
-
-    print("安全帽离开头部")
-    return False
-
+# # 点对点欧拉距离
+# def p2p_euclidean(point1: list, point2: list) -> int:
+#     """
+#     :param point1:[x1,y1]
+#     :param point2:[x2,y2]
+#     :return:distance
+#     """
+#     offset_x = point1[0] - point2[0]
+#     offset_y = point1[1] - point2[1]
+#     return int(math.sqrt(offset_x ** 2 + offset_y ** 2))
+#
+#
+# # 求头部与所有安全帽的最小距离
+# def get_distance(head_points: list, hat_point: list) -> int:
+#     """
+#     :param point1: head point :[[x1,y1],[x2,y2],[y3,y3],...]
+#     :param points: hat points:[x1,y1]
+#     :return: min distance
+#     """
+#
+#     min_dis = 99999
+#     for head in head_points:
+#         ret = p2p_euclidean(head, hat_point)
+#         if ret < min_dis:
+#             min_dis = ret
+#     return min_dis
+#
+#
+# # 判断在阈值范围内，是否有匹配的安全帽
+# def is_hat(person: PersonBody, hats_point: list, img_area: int) -> bool:
+#     # 头部平均高度
+#     if person.get_head_point() == []:
+#         return False
+#     # print("points:", person.get_head_point())
+#     np_points = np.array(person.get_head_point())
+#     print("head points:", np_points)
+#     Y = int(np.average(np_points, 0)[1])
+#     print("头部平均高度", Y)
+#     # 求人头坐标间的最大距离
+#     points = person.get_head_point()
+#     points = np.array(points)
+#     max_head_dis = round(np.max(squareform(pdist(points))))
+#
+#     body_area = person.get_body_area()
+#     body_img_rate = body_area / img_area
+#     print("body_area:{},人体-图片占比:{}".format(body_area, body_img_rate))
+#     person.set_rate(body_img_rate)
+#
+#     if body_img_rate > 0.4:
+#         print("0.8倍缩小")
+#         max_head_dis *= 0.8
+#     else:
+#         if body_img_rate < 0.001:
+#             return False
+#         print("1.2倍放大")
+#         max_head_dis *= 1.2
+#     print("头内坐标间最大距离:", max_head_dis)
+#
+#     for hat in hats_point:
+#         # 安全帽在人体范围内
+#         if hat[1] > Y:
+#             print("安全帽高度:", hat[1])
+#             print("安全帽低于头部")
+#             continue
+#         # 获取头部和帽子最小距离
+#         ret = get_distance(person.get_head_point(), hat)
+#         print("头帽最小距离:", ret)
+#         if max_head_dis > ret:
+#             return True
+#
+#     print("安全帽离开头部")
+#     return False
+#
 
 print("加载模型")
 net = PoseEstimationWithMobileNet()
 checkpoint_path = "./checkpoint_iter_370000.pth"
-assert os.path.exists(checkpoint_path) == True, 'weight path is not exists'
+assert os.path.exists(checkpoint_path) is True, 'weight path is not exists'
 checkpoint = torch.load(checkpoint_path, map_location='cpu')
 load_state(net, checkpoint)
 
@@ -265,7 +262,7 @@ def get_head_point():
                 cv2.circle(img, tuple(p), 3, BULD, -1)
         if head_point:
             location.append(head_point)
-    return get_result("200", "Success", location)
+    return get_result(200, "Success", location)
 
 
 @app.route('/get_head_point_v2', methods=['POST'])
@@ -349,16 +346,12 @@ def get_head_point_v2():
                 cv2.imwrite("./img.jpg", img)
                 cv2.waitKey(0)
             location.append(head_point)
-    return get_result("200", "Success", location)
+    return get_result(200, "Success", location)
 
 
 @app.route('/get_body_box', methods=['POST'])
 def get_body_box():
-    print("Function:get body box")
-    is_drwa = False
-
-    output = []
-    person_list = []
+    data = []
     params = request.json if request.method == "POST" else request.args
     img = base64_decode2cv2(params["img"])
     img = img[0]
@@ -376,306 +369,306 @@ def get_body_box():
         all_keypoints[kpt_id, 0] = (all_keypoints[kpt_id, 0] * stride / upsample_ratio - pad[1]) / scale
         all_keypoints[kpt_id, 1] = (all_keypoints[kpt_id, 1] * stride / upsample_ratio - pad[0]) / scale
 
-    print("人体个数：", len(pose_entries))
-    for n in range(len(pose_entries)):
-        head_point = []
-        if len(pose_entries[n]) == 0:
+    for i in range(len(pose_entries)):
+        if len(pose_entries[i]) == 0:
             continue
         pose_keypoints = np.ones((num_keypoints, 2), dtype=np.int32) * -1
         for kpt_id in range(num_keypoints):
-            if pose_entries[n][kpt_id] != -1.0:  # keypoint was found
-                pose_keypoints[kpt_id, 0] = int(all_keypoints[int(pose_entries[n][kpt_id]), 0])
-                pose_keypoints[kpt_id, 1] = int(all_keypoints[int(pose_entries[n][kpt_id]), 1])
+            if pose_entries[i][kpt_id] != -1.0:  # keypoint was found
+                pose_keypoints[kpt_id, 0] = int(all_keypoints[int(pose_entries[i][kpt_id]), 0])
+                pose_keypoints[kpt_id, 1] = int(all_keypoints[int(pose_entries[i][kpt_id]), 1])
 
-        pose = Pose(pose_keypoints, pose_entries[n][18])
+        # pose = Pose(pose_keypoints, pose_entries[n][18])
+        print('18 points:', pose_keypoints)
+
+        assert pose_keypoints.shape == (Pose.num_kpts, 2)
+        points = []
+        for part_id in range(len(keypoints.BODY_PARTS_PAF_IDS) - 2):
+
+            kpt_a_id = keypoints.BODY_PARTS_KPT_IDS[part_id][0]
+            global_kpt_a_id = pose_keypoints[kpt_a_id, 0]
+            kpt_b_id = keypoints.BODY_PARTS_KPT_IDS[part_id][1]
+            global_kpt_b_id = pose_keypoints[kpt_b_id, 0]
+
+            if global_kpt_a_id != -1 and global_kpt_b_id != -1:
+                x_a, y_a = pose_keypoints[kpt_a_id]
+                x_b, y_b = pose_keypoints[kpt_b_id]
+                cv2.line(img, (int(x_a), int(y_a)), (int(x_b), int(y_b)), Pose.color, 1)
+                points.append([int(x_a), int(y_a)])
+                points.append([int(x_b), int(y_b)])
+
+        color = ((255, 0, 0), (0, 255, 0), (0, 0, 255), (255, 255, 0), (255, 0, 255), (0, 255, 255), (125, 255, 0))
+        for point in points:
+            cv2.circle(img, (int(point[0]), int(point[1])), 3, color[i], -1)
+        cv2.imshow("img", img)
+        cv2.waitKey(0)
 
         # 去除负数项
-        ret = [i for i in pose_keypoints if i[0] > 0]
-        np_pose_keypoints = np.array(ret)
-        # print("ret:",ret)
-        ret = np.min(np_pose_keypoints, 0)
-        x1, y1 = ret
-        ret = np.max(np_pose_keypoints, 0)
-        x2, y2 = ret
-
-        # 人体边框坐标列表
-        body_list = []
-
-        body_list.append(int(x1))
-        body_list.append(int(y1))
-        body_list.append(int(x2))
-        body_list.append(int(y2))
-        PersonBody = PersonBody(n, head_point, body_list, pose_keypoints)
-        person_list.append(PersonBody)
-
-    if not person_list:
-        return get_result("200", "Empty", [])
-    for person in person_list:
-        temp_dic = {}
-        box = person.get_body_box()
-        x1, y1 = (box[0], box[1])
-        x2, y2 = (box[2], box[3])
-
-        # temp_dic["x1"] = x1
-        # temp_dic["y1"] = y1
-        # temp_dic["x2"] = x2
-        # temp_dic["y2"] = y2
-
-        temp_dic["height"] = y2 - y1
-        temp_dic["left"] = x1
-        temp_dic["top"] = y1
-        temp_dic["width"] = x2 - x1
-
-        temp_dic["rate"] = round(person.get_rate(), 5) * 100
-        temp_dic["flag"] = person.get_flag()
-        temp_dic['score'] = person.get_score()
-
-        if is_drwa:
-            if person.get_score():
-                cv2.rectangle(img, (x1, y1), (x2, y2), GREED, 1)
-        output.append(temp_dic)
-
-    print("output:", output)
-    if is_drwa:
-        cv2.imwrite("./ret_imgs/ret_{}.jpg".format("test"), img)
-
-    return get_result("200", "Success", output)
-
-
-@app.route('/', methods=['POST'])
-def human_pose():
-    is_drwa = False
-
-    output = []
-    person_list = []
-    params = request.json if request.method == "POST" else request.args
-    img = base64_decode2cv2(params["img"])
-    img = img[0]
-    img_h, img_w, img_c = img.shape
-    img_area = img_h * img_w
-    print("img_w:{},img_h:{},img_area:{}".format(img_w, img_h, img_area))
-    location = params["location"]
-    alarm_type = params['alarmtype']
-
-    heatmaps, pafs, scale, pad = infer_fast(net, img, height_size, stride, upsample_ratio, cpu)
-
-    total_keypoints_num = 0
-    all_keypoints_by_type = []
-    for kpt_idx in range(num_keypoints):  # 19th for bg
-        total_keypoints_num += extract_keypoints(heatmaps[:, :, kpt_idx], all_keypoints_by_type,
-                                                 total_keypoints_num)
-
-    pose_entries, all_keypoints = group_keypoints(all_keypoints_by_type, pafs)
-    for kpt_id in range(all_keypoints.shape[0]):
-        all_keypoints[kpt_id, 0] = (all_keypoints[kpt_id, 0] * stride / upsample_ratio - pad[1]) / scale
-        all_keypoints[kpt_id, 1] = (all_keypoints[kpt_id, 1] * stride / upsample_ratio - pad[0]) / scale
-
-    print("人体个数：", len(pose_entries))
-    print('pose_entries:', pose_entries)
-    for n in range(len(pose_entries)):
-        head_point = []
-        if len(pose_entries[n]) == 0:
+        np_pose_keypoints = np.array([i for i in points if i[0] >= 0])
+        x1, y1 = np.min(np_pose_keypoints, 0)
+        x1, y1 = int(x1), int(y1)
+        x2, y2 = np.max(np_pose_keypoints, 0)
+        x2, y2 = int(x2), int(y2)
+        # 躯干1
+        if pose_keypoints[1][0] == -1:
             continue
-        pose_keypoints = np.ones((num_keypoints, 2), dtype=np.int32) * -1
-        for kpt_id in range(num_keypoints):
-            if pose_entries[n][kpt_id] != -1.0:  # keypoint was found
-                pose_keypoints[kpt_id, 0] = int(all_keypoints[int(pose_entries[n][kpt_id]), 0])
-                pose_keypoints[kpt_id, 1] = int(all_keypoints[int(pose_entries[n][kpt_id]), 1])
+        # 大腿8,11
+        if pose_keypoints[8][0] == -1:
+            continue
+        if pose_keypoints[11][0] == -1:
+            continue
+        # 左肩 and  右肩
+        if pose_keypoints[2][0] == -1 and pose_keypoints[5][0] == -1:
+            continue
+        # 左膝盖 右膝盖
+        if pose_keypoints[9][0] == -1 and pose_keypoints[12][0] == -1:
+            continue
 
-        pose = Pose(pose_keypoints, pose_entries[n][18])
-
-        # 耳朵关键点
-        ears = [16, 17]
-        ears_flag = True
-        for ear in ears:
-            if pose_keypoints[ear][0] == -1 or pose_keypoints[ear][1] == -1:
-                ears_flag = False
-                continue
-            head_point.append(pose_keypoints[ear])
-
-        # 当耳朵关键点完整时推断中心点
-        if ears_flag:
-            offset = abs(pose_keypoints[17][0] - pose_keypoints[16][0])
-            x = min(pose_keypoints[17][0], pose_keypoints[16][0])
-            x += int(0.5 * offset)
-
-            offset = abs(pose_keypoints[17][1] - pose_keypoints[16][1])
-            y = min(pose_keypoints[17][1], pose_keypoints[16][1])
-            y += int(0.5 * offset)
-
-            new_point = [x, y]
-            if pose_keypoints[16][1] == pose_keypoints[17][1]:
-                new_point = (x, pose_keypoints[17][1])
-            head_point.append(new_point)
-
-        face = [0, 14, 15]
-        for f in face:
-            if pose_keypoints[f][0] != -1 and pose_keypoints[f][1] != -1:
-                head_point.append(pose_keypoints[f])
-        if is_drwa:
-            # 绘制人体骨骼
-            pose.draw(img)
-            # 绘制头部关键点
-            for p in head_point:
-                cv2.circle(img, tuple(p), 3, BULD, -1)
-
-        # 去除负数项
-        ret = [i for i in pose_keypoints if i[0] > 0]
-        np_pose_keypoints = np.array(ret)
-        # print("ret:",ret)
-        ret = np.min(np_pose_keypoints, 0)
-        x1, y1 = ret
-        ret = np.max(np_pose_keypoints, 0)
-        x2, y2 = ret
-
-        # 人体边框坐标列表
-        body_list = []
-        expand_rate_x = 0.2  # 边界扩展因子
-        expand_rate_y = 0.1  # 边界扩展因子
-
-        body_list.append(int(x1))
-        body_list.append(int(y1))
-        body_list.append(int(x2))
-        body_list.append(int(y2))
-        PersonBody = PersonBody(n, head_point, body_list, pose_keypoints)
-        person_list.append(PersonBody)
-
-    if alarm_type == 2:
-        print("Alarm_type:", alarm_type)
-        cloth_location_list = hltw2xxyy(location)
-        print(cloth_location_list)
-        for person in person_list:
-            print("\n当前第{}个人".format(person.get_person_index()))
-            is_cloth(person, cloth_location_list)
-
-    if alarm_type == 3:
-        print("Alarm_type:", alarm_type)
-        # 获取安全帽中心点
-        hat_centre_points = get_centre_point(location)
-        print("安全帽个数:", len(hat_centre_points))
-
-        if is_drwa:
-            # 绘制安全帽中心点
-            for i, p in enumerate(hat_centre_points):
-                cv2.circle(img, tuple(p), 6, WHITE, -1)
-
-        # 遍历匹配人体和安全帽
-        for person in person_list:
-            print("\n当前第{}个人".format(person.get_person_index()))
-            ret = is_hat(person, hat_centre_points, img_area)
-            print("是否戴安全帽：", ret)
-            person.set_flag(ret)
-
-    for person in person_list:
-        temp_dic = {}
-        box = person.get_body_box()
-        x1, y1 = (box[0], box[1])
-        x2, y2 = (box[2], box[3])
-
-        temp_dic["x1"] = x1
-        temp_dic["y1"] = y1
-        temp_dic["x2"] = x2
-        temp_dic["y2"] = y2
-        temp_dic["rate"] = round(person.get_rate(), 5) * 100
-        temp_dic["flag"] = person.get_flag()
-        temp_dic['score'] = person.get_score()
-
-        if is_drwa:
-            if person.get_rate() < 0.001:
-                continue
-            if person.get_flag():
-                cv2.rectangle(img, (x1, y1), (x2, y2), GREED, 1)
-            else:
-                cv2.rectangle(img, (x1, y1), (x2, y2), RED, 1)
-        output.append(temp_dic)
-
-    print("output:", output)
-    if is_drwa:
-        cv2.imwrite("./ret_imgs/ret_{}.jpg".format("test"), img)
-
-    return get_result("200", "Success", output)
+        cv2.rectangle(img, (x1, y1), (x2, y2), (255, 182, 193), 1)
+        data_item = {
+            "height": y2 - y1,
+            "left": x1,
+            "top": y1,
+            "width": x2 - x1
+        }
+        data.append(data_item)
+    return get_result(200, 'Success', data)
 
 
-def hltw2xxyy(location: list) -> list:
-    item_all = []
-    for i in location:
-        item = []
-        item.append(i['left'])
-        item.append(i['top'])
-        item.append(i['left'] + i['width'])
-        item.append(i['top'] + i['height'])
-        item_all.append(item)
-    return item_all
+# @app.route('/', methods=['POST'])
+# def human_pose():
+#     is_drwa = False
+#
+#     output = []
+#     person_list = []
+#     params = request.json if request.method == "POST" else request.args
+#     img = base64_decode2cv2(params["img"])
+#     img = img[0]
+#     img_h, img_w, img_c = img.shape
+#     img_area = img_h * img_w
+#     print("img_w:{},img_h:{},img_area:{}".format(img_w, img_h, img_area))
+#     location = params["location"]
+#     alarm_type = params['alarmtype']
+#
+#     heatmaps, pafs, scale, pad = infer_fast(net, img, height_size, stride, upsample_ratio, cpu)
+#
+#     total_keypoints_num = 0
+#     all_keypoints_by_type = []
+#     for kpt_idx in range(num_keypoints):  # 19th for bg
+#         total_keypoints_num += extract_keypoints(heatmaps[:, :, kpt_idx], all_keypoints_by_type,
+#                                                  total_keypoints_num)
+#
+#     pose_entries, all_keypoints = group_keypoints(all_keypoints_by_type, pafs)
+#     for kpt_id in range(all_keypoints.shape[0]):
+#         all_keypoints[kpt_id, 0] = (all_keypoints[kpt_id, 0] * stride / upsample_ratio - pad[1]) / scale
+#         all_keypoints[kpt_id, 1] = (all_keypoints[kpt_id, 1] * stride / upsample_ratio - pad[0]) / scale
+#
+#     print("人体个数：", len(pose_entries))
+#     print('pose_entries:', pose_entries)
+#     for n in range(len(pose_entries)):
+#         head_point = []
+#         if len(pose_entries[n]) == 0:
+#             continue
+#         pose_keypoints = np.ones((num_keypoints, 2), dtype=np.int32) * -1
+#         for kpt_id in range(num_keypoints):
+#             if pose_entries[n][kpt_id] != -1.0:  # keypoint was found
+#                 pose_keypoints[kpt_id, 0] = int(all_keypoints[int(pose_entries[n][kpt_id]), 0])
+#                 pose_keypoints[kpt_id, 1] = int(all_keypoints[int(pose_entries[n][kpt_id]), 1])
+#
+#         pose = Pose(pose_keypoints, pose_entries[n][18])
+#
+#         # 耳朵关键点
+#         ears = [16, 17]
+#         ears_flag = True
+#         for ear in ears:
+#             if pose_keypoints[ear][0] == -1 or pose_keypoints[ear][1] == -1:
+#                 ears_flag = False
+#                 continue
+#             head_point.append(pose_keypoints[ear])
+#
+#         # 当耳朵关键点完整时推断中心点
+#         if ears_flag:
+#             offset = abs(pose_keypoints[17][0] - pose_keypoints[16][0])
+#             x = min(pose_keypoints[17][0], pose_keypoints[16][0])
+#             x += int(0.5 * offset)
+#
+#             offset = abs(pose_keypoints[17][1] - pose_keypoints[16][1])
+#             y = min(pose_keypoints[17][1], pose_keypoints[16][1])
+#             y += int(0.5 * offset)
+#
+#             new_point = [x, y]
+#             if pose_keypoints[16][1] == pose_keypoints[17][1]:
+#                 new_point = (x, pose_keypoints[17][1])
+#             head_point.append(new_point)
+#
+#         face = [0, 14, 15]
+#         for f in face:
+#             if pose_keypoints[f][0] != -1 and pose_keypoints[f][1] != -1:
+#                 head_point.append(pose_keypoints[f])
+#         if is_drwa:
+#             # 绘制人体骨骼
+#             pose.draw(img)
+#             # 绘制头部关键点
+#             for p in head_point:
+#                 cv2.circle(img, tuple(p), 3, BULD, -1)
+#
+#         # 去除负数项
+#         ret = [i for i in pose_keypoints if i[0] > 0]
+#         np_pose_keypoints = np.array(ret)
+#         # print("ret:",ret)
+#         ret = np.min(np_pose_keypoints, 0)
+#         x1, y1 = ret
+#         ret = np.max(np_pose_keypoints, 0)
+#         x2, y2 = ret
+#
+#         # 人体边框坐标列表
+#         body_list = []
+#         expand_rate_x = 0.2  # 边界扩展因子
+#         expand_rate_y = 0.1  # 边界扩展因子
+#
+#         body_list.append(int(x1))
+#         body_list.append(int(y1))
+#         body_list.append(int(x2))
+#         body_list.append(int(y2))
+#         PersonBody = PersonBody(n, head_point, body_list, pose_keypoints)
+#         person_list.append(PersonBody)
+#
+#     if alarm_type == 2:
+#         print("Alarm_type:", alarm_type)
+#         cloth_location_list = hltw2xxyy(location)
+#         print(cloth_location_list)
+#         for person in person_list:
+#             print("\n当前第{}个人".format(person.get_person_index()))
+#             is_cloth(person, cloth_location_list)
+#
+#     if alarm_type == 3:
+#         print("Alarm_type:", alarm_type)
+#         # 获取安全帽中心点
+#         hat_centre_points = get_centre_point(location)
+#         print("安全帽个数:", len(hat_centre_points))
+#
+#         if is_drwa:
+#             # 绘制安全帽中心点
+#             for i, p in enumerate(hat_centre_points):
+#                 cv2.circle(img, tuple(p), 6, WHITE, -1)
+#
+#         # 遍历匹配人体和安全帽
+#         for person in person_list:
+#             print("\n当前第{}个人".format(person.get_person_index()))
+#             ret = is_hat(person, hat_centre_points, img_area)
+#             print("是否戴安全帽：", ret)
+#             person.set_flag(ret)
+#
+#     for person in person_list:
+#         temp_dic = {}
+#         box = person.get_body_box()
+#         x1, y1 = (box[0], box[1])
+#         x2, y2 = (box[2], box[3])
+#
+#         temp_dic["x1"] = x1
+#         temp_dic["y1"] = y1
+#         temp_dic["x2"] = x2
+#         temp_dic["y2"] = y2
+#         temp_dic["rate"] = round(person.get_rate(), 5) * 100
+#         temp_dic["flag"] = person.get_flag()
+#         temp_dic['score'] = person.get_score()
+#
+#         if is_drwa:
+#             if person.get_rate() < 0.001:
+#                 continue
+#             if person.get_flag():
+#                 cv2.rectangle(img, (x1, y1), (x2, y2), GREED, 1)
+#             else:
+#                 cv2.rectangle(img, (x1, y1), (x2, y2), RED, 1)
+#         output.append(temp_dic)
+#
+#     print("output:", output)
+#     if is_drwa:
+#         cv2.imwrite("./ret_imgs/ret_{}.jpg".format("test"), img)
+#
+#     return get_result("200", "Success", output)
 
 
-def mat_inter(box1: list, box2: list) -> bool:
-    # 判断两个矩形是否相交
-    # box=(xA,yA,xB,yB)
-    x01, y01, x02, y02 = box1
-    x11, y11, x12, y12 = box2
-
-    lx = abs((x01 + x02) / 2 - (x11 + x12) / 2)
-    ly = abs((y01 + y02) / 2 - (y11 + y12) / 2)
-    sax = abs(x01 - x02)
-    sbx = abs(x11 - x12)
-    say = abs(y01 - y02)
-    sby = abs(y11 - y12)
-    if lx <= (sax + sbx) / 2 and ly <= (say + sby) / 2:
-        return True
-    else:
-        return False
-
-
-def solve_coincide(box1: list, box2: list) -> bool:
-    # box=(xA,yA,xB,yB)
-    # 计算两个矩形框的重合度
-    if mat_inter(box1, box2) is True:
-        x01, y01, x02, y02 = box1
-        x11, y11, x12, y12 = box2
-        col = min(x02, x12) - max(x01, x11)
-        row = min(y02, y12) - max(y01, y11)
-        intersection = col * row
-        area1 = (x02 - x01) * (y02 - y01)
-        area2 = (x12 - x11) * (y12 - y11)
-        coincide = intersection / (area1 + area2 - intersection)
-        return coincide
-    else:
-        return False
-
-
-def is_cloth(person: PersonBody, cloth_loction: list):
-    rate = 0
-    for cloth in cloth_loction:
-        ret = solve_coincide(cloth, person.get_body_box())
-        if ret > rate:
-            rate = ret
-    person.set_score(rate)
-    if rate >= 0.4:
-        person.set_flag(True)
-
-    print("person i:{},rate:{}".format(person.get_person_index(), rate))
-
-
-def get_centre_point(location: list) -> list:
-    """
-    :param location: [{left,top,width,height},{left,top,width,height}]
-    :return: [[x,y],[x,y]]
-    """
-    point = []
-    print(location)
-    for part in location:
-        part_point = []
-        x = part['left'] + 0.5 * part['width']
-        y = part['top'] + 0.5 * part['height']
-
-        part_point.append(int(x))
-        part_point.append(int(y))
-        point.append(part_point)
-    return point
+# def hltw2xxyy(location: list) -> list:
+#     item_all = []
+#     for i in location:
+#         item = []
+#         item.append(i['left'])
+#         item.append(i['top'])
+#         item.append(i['left'] + i['width'])
+#         item.append(i['top'] + i['height'])
+#         item_all.append(item)
+#     return item_all
+#
+#
+# def mat_inter(box1: list, box2: list) -> bool:
+#     # 判断两个矩形是否相交
+#     # box=(xA,yA,xB,yB)
+#     x01, y01, x02, y02 = box1
+#     x11, y11, x12, y12 = box2
+#
+#     lx = abs((x01 + x02) / 2 - (x11 + x12) / 2)
+#     ly = abs((y01 + y02) / 2 - (y11 + y12) / 2)
+#     sax = abs(x01 - x02)
+#     sbx = abs(x11 - x12)
+#     say = abs(y01 - y02)
+#     sby = abs(y11 - y12)
+#     if lx <= (sax + sbx) / 2 and ly <= (say + sby) / 2:
+#         return True
+#     else:
+#         return False
+#
+#
+# def solve_coincide(box1: list, box2: list) -> bool:
+#     # box=(xA,yA,xB,yB)
+#     # 计算两个矩形框的重合度
+#     if mat_inter(box1, box2) is True:
+#         x01, y01, x02, y02 = box1
+#         x11, y11, x12, y12 = box2
+#         col = min(x02, x12) - max(x01, x11)
+#         row = min(y02, y12) - max(y01, y11)
+#         intersection = col * row
+#         area1 = (x02 - x01) * (y02 - y01)
+#         area2 = (x12 - x11) * (y12 - y11)
+#         coincide = intersection / (area1 + area2 - intersection)
+#         return coincide
+#     else:
+#         return False
+#
+#
+# def is_cloth(person: PersonBody, cloth_loction: list):
+#     rate = 0
+#     for cloth in cloth_loction:
+#         ret = solve_coincide(cloth, person.get_body_box())
+#         if ret > rate:
+#             rate = ret
+#     person.set_score(rate)
+#     if rate >= 0.4:
+#         person.set_flag(True)
+#
+#     print("person i:{},rate:{}".format(person.get_person_index(), rate))
+#
+#
+# def get_centre_point(location: list) -> list:
+#     """
+#     :param location: [{left,top,width,height},{left,top,width,height}]
+#     :return: [[x,y],[x,y]]
+#     """
+#     point = []
+#     print(location)
+#     for part in location:
+#         part_point = []
+#         x = part['left'] + 0.5 * part['width']
+#         y = part['top'] + 0.5 * part['height']
+#
+#         part_point.append(int(x))
+#         part_point.append(int(y))
+#         point.append(part_point)
+#     return point
 
 
 # 构建接口返回结果
-def get_result(code, message, data):
+def get_result(code: int, message: str, data):
     result = {
         "code": code,
         "message": message,
@@ -698,53 +691,74 @@ def test_(path):
     for kpt_id in range(all_keypoints.shape[0]):
         all_keypoints[kpt_id, 0] = (all_keypoints[kpt_id, 0] * stride / upsample_ratio - pad[1]) / scale
         all_keypoints[kpt_id, 1] = (all_keypoints[kpt_id, 1] * stride / upsample_ratio - pad[0]) / scale
-
-    # print(' all_keypoints.shape[0]:', all_keypoints)
-    # print('People Num:', len(pose_entries))
-    # for item in pose_entries:
-    #     print(item)
-    # print('pose_entries:', pose_entries)
-
-    for n in range(len(pose_entries)):
-        if len(pose_entries[n]) == 0:
+    data = []
+    for i in range(len(pose_entries)):
+        if len(pose_entries[i]) == 0:
             continue
+
         # num_keypoints=18
         pose_keypoints = np.ones((num_keypoints, 2), dtype=np.int32) * -1
         for kpt_id in range(num_keypoints):
-            if pose_entries[n][kpt_id] != -1.0:  # keypoint was found
-                pose_keypoints[kpt_id, 0] = int(all_keypoints[int(pose_entries[n][kpt_id]), 0])
-                pose_keypoints[kpt_id, 1] = int(all_keypoints[int(pose_entries[n][kpt_id]), 1])
+            if pose_entries[i][kpt_id] != -1.0:  # keypoint was found
+                pose_keypoints[kpt_id, 0] = int(all_keypoints[int(pose_entries[i][kpt_id]), 0])
+                pose_keypoints[kpt_id, 1] = int(all_keypoints[int(pose_entries[i][kpt_id]), 1])
+        print('18 points:', pose_keypoints)
 
-        pose = Pose(pose_keypoints, pose_entries[n][18])
-        points=pose.draw(img)
-        print('points:',len(points))
-        print(points)
-        # bbox=pose.get_bbox(pose_keypoints)
-        # print(pose_entries[n])
-        red = (0, 0, 255)
-        blue = (255, 0, 0)
-        green = (0, 255, 0)
-        yellow = (255, 0, 0)
-        hot_pink = (255, 105, 180)
-        color = (red, blue, green, yellow, hot_pink)
-        # print(pose_keypoints)
-        for i, point in enumerate(points):
-            cv2.circle(img, (int(point[0]), int(point[1])), 3, color[n], -1)
+        # pose = Pose(pose_keypoints, pose_entries[n][18])
+        # points = pose.draw(img)
 
-            # cv2.imwrite('/home/ubuntu/下载/people/{}.jpg'.format(1624502462995), img)
+        assert pose_keypoints.shape == (Pose.num_kpts, 2)
+        points = []
+        for part_id in range(len(keypoints.BODY_PARTS_PAF_IDS) - 2):
+
+            kpt_a_id = keypoints.BODY_PARTS_KPT_IDS[part_id][0]
+            global_kpt_a_id = pose_keypoints[kpt_a_id, 0]
+            kpt_b_id = keypoints.BODY_PARTS_KPT_IDS[part_id][1]
+            global_kpt_b_id = pose_keypoints[kpt_b_id, 0]
+
+            if global_kpt_a_id != -1 and global_kpt_b_id != -1:
+                x_a, y_a = pose_keypoints[kpt_a_id]
+                x_b, y_b = pose_keypoints[kpt_b_id]
+                cv2.line(img, (int(x_a), int(y_a)), (int(x_b), int(y_b)), Pose.color, 1)
+                points.append([int(x_a), int(y_a)])
+                points.append([int(x_b), int(y_b)])
+
+        color = ((255, 0, 0), (0, 255, 0), (0, 0, 255), (255, 255, 0), (255, 0, 255), (0, 255, 255), (125, 255, 0))
+        for point in points:
+            cv2.circle(img, (int(point[0]), int(point[1])), 3, color[i], -1)
+        cv2.imshow("img", img)
+        cv2.waitKey(0)
+
         # 去除负数项
-        ret = [i for i in points if i[0] > 0]
-        np_pose_keypoints = np.array(ret)
-        print("ret:",np_pose_keypoints)
-        ret = np.min(np_pose_keypoints, 0)
-        x1, y1 = ret
-        ret = np.max(np_pose_keypoints, 0)
-        x2, y2 = ret
+        np_pose_keypoints = np.array([i for i in points if i[0] >= 0])
+        x1, y1 = np.min(np_pose_keypoints, 0)
+        x1, y1 = int(x1), int(y1)
+        x2, y2 = np.max(np_pose_keypoints, 0)
+        x2, y2 = int(x2), int(y2)
+        # 躯干1
+        if pose_keypoints[1][0] == -1:
+            continue
+        # 大腿8,11
+        if pose_keypoints[8][0] == -1:
+            continue
+        if pose_keypoints[11][0] == -1:
+            continue
+        # 左肩 and  右肩
+        if pose_keypoints[2][0] == -1 and pose_keypoints[5][0] == -1:
+            continue
+        # 左膝盖 右膝盖
+        if pose_keypoints[9][0] == -1 and pose_keypoints[12][0] == -1:
+            continue
 
-        # x1,y1=bbox[0],bbox[1]
-        # x2,y2=bbox[2],bbox[3]
-        # print(bbox)
-        # cv2.rectangle(img, (int(x1), int(y1)), (int(x2), int(y2)), blue, 1)
+        cv2.rectangle(img, (x1, y1), (x2, y2), (255, 182, 193), 1)
+        data_item = {
+            "height": y2 - y1,
+            "left": x1,
+            "top": y1,
+            "width": x2 - x1
+        }
+        data.append(data_item)
+        ret = get_result(200, 'Success', data)
     return img
 
 
@@ -754,14 +768,20 @@ def flask_run():
 
 
 if __name__ == '__main__':
-    # imgs = os.listdir('./download_imgs')
-    # for img in imgs:
-    #     img_path = os.path.join('./download_imgs', img)
-    #     image = test_(img_path)
-    #     cv2.imshow('{}'.format(img), image)
-    #     cv2.waitKey(0)
-    image = test_('./download_imgs/12.jpg')
-    cv2.imshow('{}'.format(10), image)
-    cv2.waitKey(0)
+    imgs = os.listdir('./download_imgs')
+    for i, img in enumerate(imgs):
+        if i > 100:
+            break
+        print('{}'.format(img))
+        img_path = os.path.join('./download_imgs', img)
+        image = test_(img_path)
+        cv2.imshow('{}'.format(img), image)
+        # cv2.imwrite('./out_imgs/{}'.format(img), image)
+        cv2.waitKey(0)
+        cv2.destroyWindow('{}'.format(img))
+
+    # image = test_('./download_imgs/10.jpg')
+    # cv2.imshow('{}'.format(10), image)
+    # cv2.waitKey(0)
 
     # flask_run()
