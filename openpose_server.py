@@ -49,7 +49,7 @@ def infer_fast(net,
     padded_img, pad = pad_width(scaled_img, stride, pad_value, min_dims)
 
     tensor_img = torch.from_numpy(padded_img).permute(2, 0, 1).unsqueeze(0).float()
-    if not cpu and use_cuda:
+    if not cpu and CUDA_AVAILABLE:
         tensor_img = tensor_img.cuda()
 
     stages_output = net(tensor_img)
@@ -68,80 +68,6 @@ def infer_fast(net,
     return heatmaps, pafs, scale, pad
 
 
-# # 点对点欧拉距离
-# def p2p_euclidean(point1: list, point2: list) -> int:
-#     """
-#     :param point1:[x1,y1]
-#     :param point2:[x2,y2]
-#     :return:distance
-#     """
-#     offset_x = point1[0] - point2[0]
-#     offset_y = point1[1] - point2[1]
-#     return int(math.sqrt(offset_x ** 2 + offset_y ** 2))
-#
-#
-# # 求头部与所有安全帽的最小距离
-# def get_distance(head_points: list, hat_point: list) -> int:
-#     """
-#     :param point1: head point :[[x1,y1],[x2,y2],[y3,y3],...]
-#     :param points: hat points:[x1,y1]
-#     :return: min distance
-#     """
-#
-#     min_dis = 99999
-#     for head in head_points:
-#         ret = p2p_euclidean(head, hat_point)
-#         if ret < min_dis:
-#             min_dis = ret
-#     return min_dis
-#
-#
-# # 判断在阈值范围内，是否有匹配的安全帽
-# def is_hat(person: PersonBody, hats_point: list, img_area: int) -> bool:
-#     # 头部平均高度
-#     if person.get_head_point() == []:
-#         return False
-#     # print("points:", person.get_head_point())
-#     np_points = np.array(person.get_head_point())
-#     print("head points:", np_points)
-#     Y = int(np.average(np_points, 0)[1])
-#     print("头部平均高度", Y)
-#     # 求人头坐标间的最大距离
-#     points = person.get_head_point()
-#     points = np.array(points)
-#     max_head_dis = round(np.max(squareform(pdist(points))))
-#
-#     body_area = person.get_body_area()
-#     body_img_rate = body_area / img_area
-#     print("body_area:{},人体-图片占比:{}".format(body_area, body_img_rate))
-#     person.set_rate(body_img_rate)
-#
-#     if body_img_rate > 0.4:
-#         print("0.8倍缩小")
-#         max_head_dis *= 0.8
-#     else:
-#         if body_img_rate < 0.001:
-#             return False
-#         print("1.2倍放大")
-#         max_head_dis *= 1.2
-#     print("头内坐标间最大距离:", max_head_dis)
-#
-#     for hat in hats_point:
-#         # 安全帽在人体范围内
-#         if hat[1] > Y:
-#             print("安全帽高度:", hat[1])
-#             print("安全帽低于头部")
-#             continue
-#         # 获取头部和帽子最小距离
-#         ret = get_distance(person.get_head_point(), hat)
-#         print("头帽最小距离:", ret)
-#         if max_head_dis > ret:
-#             return True
-#
-#     print("安全帽离开头部")
-#     return False
-#
-
 print("加载模型")
 net = PoseEstimationWithMobileNet()
 checkpoint_path = "./checkpoint_iter_370000.pth"
@@ -156,11 +82,13 @@ track = 1
 smooth = 1
 
 net = net.eval()
-use_cuda = torch.cuda.is_available()
-print("cuda:", use_cuda)
-if not cpu and use_cuda:
-    print("cpu:", cpu)
-    net = net.cuda()
+CUDA_AVAILABLE = torch.cuda.is_available()
+if CUDA_AVAILABLE:
+    print("Use GPU")
+else:
+    print("Use CPU")
+
+net = net.cuda() if CUDA_AVAILABLE else ...
 
 print("加载模型完成")
 stride = 8
@@ -768,20 +696,4 @@ def flask_run():
 
 
 if __name__ == '__main__':
-    # imgs = os.listdir('./download_imgs')
-    # for i, img in enumerate(imgs):
-    #     if i > 100:
-    #         break
-    #     print('{}'.format(img))
-    #     img_path = os.path.join('./download_imgs', img)
-    #     image = test_(img_path)
-    #     cv2.imshow('{}'.format(img), image)
-    #     # cv2.imwrite('./out_imgs/{}'.format(img), image)
-    #     cv2.waitKey(0)
-    #     cv2.destroyWindow('{}'.format(img))
-
-    # image = test_('./download_imgs/10.jpg')
-    # cv2.imshow('{}'.format(10), image)
-    # cv2.waitKey(0)
-
     flask_run()
