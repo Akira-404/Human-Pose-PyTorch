@@ -72,7 +72,7 @@ print("加载模型")
 net = PoseEstimationWithMobileNet()
 checkpoint_path = "./checkpoint_iter_370000.pth"
 assert os.path.exists(checkpoint_path) is True, 'weight path is not exists'
-checkpoint = torch.load(checkpoint_path, map_location='cpu')
+checkpoint = torch.load(checkpoint_path)
 load_state(net, checkpoint)
 
 # assert os.path.exists("./test_imgs") == True, 'test img file is not exists'
